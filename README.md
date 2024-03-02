@@ -1,2 +1,3 @@
 # bp_scheduler
-Buttplug.io utility library for buttplug.io client that handles playing long running commands, like funscripts, or dynamically scripted patterns and multithreaded device access
+
+Utility library for buttplug.io that handles playing long-running commands like funscripts, or dynamically scripted stroker patterns and adds an additional abstraction layer to handle multiple users per device.
