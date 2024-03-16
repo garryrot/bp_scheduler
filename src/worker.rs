@@ -1,8 +1,8 @@
 use buttplug::client::{LinearCommand, ButtplugClientError};
-use std::{collections::HashMap, fmt, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::{runtime::Handle, sync::mpsc::UnboundedReceiver};
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, trace};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{access::DeviceAccess, actuator::Actuator, speed::Speed};
