@@ -153,14 +153,6 @@ async fn cancellable_wait(duration: Duration, cancel: &CancellationToken) -> boo
 
 #[cfg(test)]
 mod tests {
-    use crate::actuator::get_actuators;
-    use crate::player::PatternPlayer;
-    use crate::settings::ActuatorSettings;
-    use crate::settings::LinearRange;
-    use crate::speed::Speed;
-    use bp_fakes::get_test_client;
-    use bp_fakes::FakeMessage;
-    use bp_fakes::*;
     use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
@@ -174,6 +166,14 @@ mod tests {
     use tokio::runtime::Handle;
     use tokio::task::JoinHandle;
     use tokio::time::timeout;
+
+    use crate::actuator::get_actuators;
+    use crate::player::PatternPlayer;
+    use crate::settings::ActuatorSettings;
+    use crate::settings::LinearRange;
+    use crate::speed::Speed;
+    
+    use bp_fakes::*;
 
     use super::{Actuator, ButtplugScheduler, PlayerSettings};
 
