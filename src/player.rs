@@ -11,7 +11,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument, trace};
 
 use crate::{
-    actuator::Actuator, cancellable_wait, settings::{ActuatorSettings, LinearRange, LinearSpeedScaling}, speed::Speed, worker::{ButtplugClientResult, WorkerTask}
+    actuator::Actuator, 
+    cancellable_wait, 
+    settings::*, 
+    worker::*,
+    speed::Speed
 };
 
 /// Pattern executor that can be passed from the schedulers main-thread to a sub-thread
@@ -20,8 +24,8 @@ pub struct PatternPlayer {
     pub scalar_resolution_ms: i32,
     pub actuators: Vec<Arc<Actuator>>,
     pub settings: Vec<ActuatorSettings>,
-    pub result_sender: UnboundedSender<ButtplugClientResult>,
-    pub result_receiver: UnboundedReceiver<ButtplugClientResult>,
+    pub result_sender: UnboundedSender<WorkerResult>,
+    pub result_receiver: UnboundedReceiver<WorkerResult>,
     pub update_receiver: UnboundedReceiver<Speed>,
     pub cancellation_token: CancellationToken,
     pub worker_task_sender: UnboundedSender<WorkerTask>,
@@ -33,21 +37,22 @@ impl PatternPlayer {
         duration: Duration,
         speed: Speed,
         settings: LinearRange
-    ) -> ButtplugClientResult {
+    ) -> WorkerResult {
         debug!(?settings, "oscillation started");
         let waiter = self.stop_after(duration);
+        let mut result = Ok(());
         let mut current_speed = speed;
-        while !self.cancelled() {
+        while !self.external_cancel() {
             self.try_update(&mut current_speed);
-            self.do_oscillate(true, current_speed, &settings).await.unwrap();
-            if self.cancelled() {
+            result = self.do_oscillate(true, current_speed, &settings).await;
+            if self.external_cancel() {
                 break;
             }
             self.try_update(&mut current_speed);
-            self.do_oscillate(false, current_speed, &settings).await.unwrap();
+            result = self.do_oscillate(false, current_speed, &settings).await;
         }
         waiter.abort();
-        Ok(())
+        result
     }
 
     /// Executes the linear 'fscript' for 'duration' and consumes the player
@@ -56,14 +61,14 @@ impl PatternPlayer {
         mut self,
         duration: Duration,
         fscript: FScript,
-    ) -> ButtplugClientResult {
+    ) -> WorkerResult {
         info!("linear pattern started");
         let mut last_result = Ok(());
         if fscript.actions.is_empty() || fscript.actions.iter().all(|x| x.at == 0) {
             return last_result;
         }
         let waiter = self.stop_after(duration);
-        while !self.cancellation_token.is_cancelled() {
+        while !self.external_cancel() {
             let started = Instant::now();
             for point in fscript.actions.iter() {
                 let point_as_float = Speed::from_fs(point).as_float();
@@ -98,7 +103,7 @@ impl PatternPlayer {
         duration: Duration,
         fscript: FScript,
         speed: Speed,
-    ) -> ButtplugClientResult {
+    ) -> WorkerResult {
         if fscript.actions.is_empty() || fscript.actions.iter().all(|x| x.at == 0) {
             return Ok(());
         }
@@ -151,7 +156,7 @@ impl PatternPlayer {
 
     /// Executes a constant movement with 'speed' for 'duration' and consumes the player
     #[instrument]
-    pub async fn play_scalar(mut self, duration: Duration, speed: Speed) -> ButtplugClientResult {
+    pub async fn play_scalar(mut self, duration: Duration, speed: Speed) -> WorkerResult {
         info!("scalar started");
         let waiter = self.stop_after(duration);
         self.do_scalar(speed, false);
@@ -203,7 +208,7 @@ impl PatternPlayer {
     }
 
     #[instrument(skip(self))]
-    async fn do_stop(mut self, is_pattern: bool) -> ButtplugClientResult {
+    async fn do_stop(mut self, is_pattern: bool) -> WorkerResult {
         for actuator in self.actuators.iter() {
             trace!("do_stop");
             self.worker_task_sender
@@ -222,7 +227,7 @@ impl PatternPlayer {
         last_result
     }
 
-    async fn do_linear(&mut self, mut pos: f64, duration_ms: u32) -> ButtplugClientResult {
+    async fn do_linear(&mut self, mut pos: f64, duration_ms: u32) -> WorkerResult {
         for (i, actuator) in self.actuators.iter().enumerate() {
             let settings = &self.settings[ i ].linear_or_max();
             pos = settings.apply_pos(pos);
@@ -241,7 +246,7 @@ impl PatternPlayer {
         self.result_receiver.recv().await.unwrap()
     }
 
-    async fn do_oscillate(&mut self, start: bool, mut speed: Speed, settings: &LinearRange) -> ButtplugClientResult {
+    async fn do_oscillate(&mut self, start: bool, mut speed: Speed, settings: &LinearRange) -> WorkerResult {
         let mut wait_ms = 0;
         for (i, actuator) in self.actuators.iter().enumerate() {
             let actual_settings = settings.merge(&self.settings[ i ].linear_or_max());
@@ -278,7 +283,7 @@ impl PatternPlayer {
         }
     }
 
-    fn cancelled(&self) -> bool {
+    fn external_cancel(&self) -> bool {
         self.cancellation_token.is_cancelled()
     }
 }

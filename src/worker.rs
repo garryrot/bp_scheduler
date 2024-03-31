@@ -5,9 +5,10 @@ use tokio::{runtime::Handle, sync::mpsc::UnboundedReceiver};
 use tracing::{error, info, trace};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{access::DeviceAccess, actuator::Actuator, speed::Speed};
+use crate::{access::DeviceAccess, actuator::{self, Actuator}, speed::Speed};
 
-pub type ButtplugClientResult<T = ()> = Result<T, ButtplugClientError>;
+pub type WorkerResult<T = ()> = Result<T, WorkerError>;
+
 
 /// Process the queue of all device actions from all player threads
 ///
@@ -26,14 +27,14 @@ pub enum WorkerTask {
         Arc<Actuator>,
         bool,
         i32,
-        UnboundedSender<ButtplugClientResult>,
+        UnboundedSender<WorkerResult>,
     ),
     Move(
         Arc<Actuator>,
         f64,
         u32,
         bool,
-        UnboundedSender<ButtplugClientResult>,
+        UnboundedSender<WorkerResult>,
     ),
     StopAll, // global but required for resetting device state
 }
@@ -57,7 +58,7 @@ impl ButtplugWorker {
                         let result = device_access
                             .stop_scalar(&actuator, is_pattern, handle)
                             .await;
-                        if let Err(err) = result_sender.send(result) {
+                        if let Err(err) = result_sender.send(get_worker_result(result, &actuator)) {
                             error!("failed sending scalar result {:?}", err)
                         }
                     }
@@ -69,7 +70,7 @@ impl ButtplugWorker {
                         Handle::current().spawn(async move {
                             let result = actuator.device.linear(&cmd).await;
                             if finish {
-                                if let Err(err) = result_sender.send(result) {
+                                if let Err(err) = result_sender.send(get_worker_result(result, &actuator)) {
                                     error!("failed sending linear result {:?}", err)
                                 }
                             }
@@ -82,5 +83,21 @@ impl ButtplugWorker {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct WorkerError {
+    pub bp_error: ButtplugClientError,
+    pub actuator: Arc<Actuator>
+}
+
+fn get_worker_result<T>(bp_result: Result<T, ButtplugClientError>, actuator: &Arc<Actuator>) -> Result<T, WorkerError> {
+    match bp_result {
+        Ok(t) => Ok(t),
+        Err(err) => Err(WorkerError { 
+            bp_error: err, 
+            actuator: actuator.clone() 
+        }),
     }
 }

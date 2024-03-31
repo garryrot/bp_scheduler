@@ -1,10 +1,9 @@
 use actuator::Actuator;
-use buttplug::client::ButtplugClientError;
 use player::PatternPlayer;
 use settings::ActuatorSettings;
 use speed::Speed;
 use std::collections::HashMap;
-use worker::{ButtplugWorker, WorkerTask};
+use worker::{ButtplugWorker, WorkerResult, WorkerTask};
 
 use std::{sync::Arc, time::Duration};
 use tokio::{
@@ -125,7 +124,7 @@ impl ButtplugScheduler {
         );
 
         let (result_sender, result_receiver) =
-            unbounded_channel::<Result<(), ButtplugClientError>>();
+            unbounded_channel::<WorkerResult>();
         PatternPlayer {
             actuators,
             settings,
@@ -238,7 +237,7 @@ mod tests {
             };
             let player = self.scheduler.create_player(actuators);
             self.handles.push(Handle::current().spawn(async move {
-                player.play_scalar(duration, speed).await.unwrap();
+                let _ = player.play_scalar(duration, speed).await;
             }));
         }
 
