@@ -300,8 +300,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_oscillate_linear_1() {
-        let (client, _) = test_oscillate(
+    async fn test_stroke_linear_1() {
+        let (client, _) = test_stroke(
             Speed::new(100),
             LinearRange{ min_pos: 0.0, max_pos: 1.0, min_ms: 50, max_ms: 400, invert: false, scaling: crate::settings::LinearSpeedScaling::Linear },
         )
@@ -314,8 +314,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_oscillate_linear_2() {
-        let (client, _) = test_oscillate(
+    async fn test_stroke_linear_2() {
+        let (client, _) = test_stroke(
             Speed::new(0),
             LinearRange{ min_pos: 1.0, max_pos: 0.0, min_ms: 10, max_ms: 100, invert: false, scaling: crate::settings::LinearSpeedScaling::Linear }
         )
@@ -328,8 +328,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_oscillate_linear_3() {
-        let (client, _) = test_oscillate(
+    async fn test_stroke_linear_3() {
+        let (client, _) = test_stroke(
             Speed::new(75),
             LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 100, max_ms: 200, invert: false, scaling: crate::settings::LinearSpeedScaling::Linear }
         )
@@ -342,8 +342,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_oscillate_linear_invert() {
-        let (client, _) = test_oscillate(
+    async fn test_stroke_linear_invert() {
+        let (client, _) = test_stroke(
             Speed::new(100),
             LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 50, max_ms: 50, invert: true, scaling: crate::settings::LinearSpeedScaling::Linear }
         )
@@ -356,7 +356,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_oscillate_update() {
+    async fn test_stroke_update() {
         let client: ButtplugTestClient = get_test_client(vec![linear(1, "lin1")]).await;
         let mut test = PlayerTest::setup(&client.created_devices);
 
@@ -365,7 +365,7 @@ mod tests {
         let player = test.get_player();
         let join = Handle::current().spawn(async move {
             let _ = player
-                .play_oscillate_linear(
+                .play_linear_stroke(
                     Duration::from_millis(250), 
                     Speed::new(100), 
                     LinearRange {
@@ -389,7 +389,7 @@ mod tests {
         calls[2].assert_duration(100);
     }
 
-    async fn test_oscillate(speed: Speed, range: LinearRange) -> (ButtplugTestClient, Instant) {
+    async fn test_stroke(speed: Speed, range: LinearRange) -> (ButtplugTestClient, Instant) {
         let client = get_test_client(vec![linear(1, "lin1")]).await;
         let mut test = PlayerTest::setup(&client.created_devices);
 
@@ -398,7 +398,7 @@ mod tests {
         let duration_ms = range.max_ms as f64 * 2.5;
         let player = test.get_player_with_settings(vec![ ActuatorSettings::Linear(range)]);
         let _ = player
-            .play_oscillate_linear(Duration::from_millis(duration_ms as u64), speed, LinearRange::max())
+            .play_linear_stroke(Duration::from_millis(duration_ms as u64), speed, LinearRange::max())
             .await;
 
         client.print_device_calls(start);

@@ -32,7 +32,7 @@ pub struct PatternPlayer {
 }
 
 impl PatternPlayer {
-    pub async fn play_oscillate_linear(
+    pub async fn play_linear_stroke(
         mut self,
         duration: Duration,
         speed: Speed,
@@ -44,12 +44,12 @@ impl PatternPlayer {
         let mut current_speed = speed;
         while !self.external_cancel() {
             self.try_update(&mut current_speed);
-            result = self.do_oscillate(true, current_speed, &settings).await;
+            result = self.do_stroke(true, current_speed, &settings).await;
             if self.external_cancel() {
                 break;
             }
             self.try_update(&mut current_speed);
-            result = self.do_oscillate(false, current_speed, &settings).await;
+            result = self.do_stroke(false, current_speed, &settings).await;
         }
         waiter.abort();
         result
@@ -246,7 +246,7 @@ impl PatternPlayer {
         self.result_receiver.recv().await.unwrap()
     }
 
-    async fn do_oscillate(&mut self, start: bool, mut speed: Speed, settings: &LinearRange) -> WorkerResult {
+    async fn do_stroke(&mut self, start: bool, mut speed: Speed, settings: &LinearRange) -> WorkerResult {
         let mut wait_ms = 0;
         for (i, actuator) in self.actuators.iter().enumerate() {
             let actual_settings = settings.merge(&self.settings[ i ].linear_or_max());
