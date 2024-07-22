@@ -13,9 +13,13 @@ use tracing::{debug, error, info, instrument, trace};
 use crate::{
     actuator::Actuator, 
     cancellable_wait, 
-    settings::*, 
-    worker::*,
-    speed::Speed
+    settings::linear::{
+        LinearRange, 
+        LinearSpeedScaling
+    }, 
+    speed::Speed, 
+    worker::*, 
+    ActuatorSettings
 };
 
 /// Pattern executor that can be passed from the schedulers main-thread to a sub-thread

@@ -2,49 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::speed::Speed;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ScalarScaling {
-    // Note: currently unused
-    Linear,            // f(x) = x
-    Quadratic,         // f(x) = x^2
-    QuadraticFraction, // f(x) = x^(1/2)
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ScalarRange {
-    pub min_speed: i64,
-    pub max_speed: i64,
-    pub factor: f64,
-    pub scaling: ScalarScaling,
-}
-
-impl Default for ScalarRange {
-    fn default() -> Self {
-        Self {
-            min_speed: 0,
-            max_speed: 100,
-            factor: 1.0,
-            scaling: ScalarScaling::Linear,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub enum ActuatorSettings {
-    #[default]
-    None,
-    Scalar(ScalarRange),
-    Linear(LinearRange),
-}
-
-impl ActuatorSettings {
-    pub fn linear_or_max(&self) -> LinearRange {
-        if let ActuatorSettings::Linear(settings) = self {
-            return settings.clone();
-        }
-        LinearRange::max()
-    }
-}
+use super::ActuatorSettings;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum LinearSpeedScaling {
@@ -87,6 +45,7 @@ impl LinearRange {
         }
     }
 }
+
 impl Default for LinearRange {
     fn default() -> Self {
         Self {
@@ -97,5 +56,14 @@ impl Default for LinearRange {
             invert: false,
             scaling: LinearSpeedScaling::Linear,
         }
+    }
+}
+
+impl ActuatorSettings {
+    pub fn linear_or_max(&self) -> LinearRange {
+        if let ActuatorSettings::Linear(settings) = self {
+            return settings.clone();
+        }
+        LinearRange::max()
     }
 }

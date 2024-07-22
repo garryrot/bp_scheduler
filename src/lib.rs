@@ -1,6 +1,6 @@
 use actuator::Actuator;
 use player::PatternPlayer;
-use settings::ActuatorSettings;
+use settings::*;
 use speed::Speed;
 use std::collections::HashMap;
 use worker::{ButtplugWorker, WorkerResult, WorkerTask};
@@ -168,8 +168,8 @@ mod tests {
 
     use crate::actuator::get_actuators;
     use crate::player::PatternPlayer;
-    use crate::settings::ActuatorSettings;
-    use crate::settings::LinearRange;
+    use crate::settings::*;
+    use crate::settings::linear::*;
     use crate::speed::Speed;
     
     use bp_fakes::*;
@@ -303,7 +303,7 @@ mod tests {
     async fn test_stroke_linear_1() {
         let (client, _) = test_stroke(
             Speed::new(100),
-            LinearRange{ min_pos: 0.0, max_pos: 1.0, min_ms: 50, max_ms: 400, invert: false, scaling: crate::settings::LinearSpeedScaling::Linear },
+            LinearRange{ min_pos: 0.0, max_pos: 1.0, min_ms: 50, max_ms: 400, invert: false, scaling: crate::settings::linear::LinearSpeedScaling::Linear },
         )
         .await;
 
@@ -317,7 +317,7 @@ mod tests {
     async fn test_stroke_linear_2() {
         let (client, _) = test_stroke(
             Speed::new(0),
-            LinearRange{ min_pos: 1.0, max_pos: 0.0, min_ms: 10, max_ms: 100, invert: false, scaling: crate::settings::LinearSpeedScaling::Linear }
+            LinearRange{ min_pos: 1.0, max_pos: 0.0, min_ms: 10, max_ms: 100, invert: false, scaling: crate::settings::linear::LinearSpeedScaling::Linear }
         )
         .await;
 
@@ -331,7 +331,7 @@ mod tests {
     async fn test_stroke_linear_3() {
         let (client, _) = test_stroke(
             Speed::new(75),
-            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 100, max_ms: 200, invert: false, scaling: crate::settings::LinearSpeedScaling::Linear }
+            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 100, max_ms: 200, invert: false, scaling: crate::settings::linear::LinearSpeedScaling::Linear }
         )
         .await;
 
@@ -345,7 +345,7 @@ mod tests {
     async fn test_stroke_linear_invert() {
         let (client, _) = test_stroke(
             Speed::new(100),
-            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 50, max_ms: 50, invert: true, scaling: crate::settings::LinearSpeedScaling::Linear }
+            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 50, max_ms: 50, invert: true, scaling: crate::settings::linear::LinearSpeedScaling::Linear }
         )
         .await;
 
@@ -374,7 +374,7 @@ mod tests {
                         min_ms: 10, 
                         max_ms: 100, 
                         invert: true, 
-                        scaling: crate::settings::LinearSpeedScaling::Linear
+                        scaling: crate::settings::linear::LinearSpeedScaling::Linear
                     })
                 .await;
         });
