@@ -53,58 +53,6 @@ impl ButtplugScheduler {
         )
     }
 
-    fn get_next_handle(&mut self) -> i32 {
-        self.last_handle += 1;
-        self.last_handle
-    }
-
-    /// Clean up finished tasks
-    pub fn clean_finished_tasks(&mut self) {
-        self.control_handles
-            .retain(|_, handle| !handle.cancellation_token.is_cancelled());
-    }
-
-    pub fn stop_task(&mut self, handle: i32) {
-        if self.control_handles.contains_key(&handle) {
-            debug!("stop handle {}", handle);
-            self.control_handles
-                .remove(&handle)
-                .unwrap()
-                .cancellation_token
-                .cancel();
-        } else {
-            error!("Unknown handle {}", handle);
-        }
-    }
-
-    pub fn update_task(&mut self, handle: i32, speed: Speed) -> bool {
-        if self.control_handles.contains_key(&handle) {
-            debug!("updating handle {}", handle);
-            let _ = self
-                .control_handles
-                .get(&handle)
-                .unwrap()
-                .update_sender
-                .send(speed);
-            true
-        } else {
-            error!("Unknown handle {}", handle);
-            false
-        }
-    }
-
-    pub fn stop_all(&mut self) {
-        let queue_full_err = "Event sender full";
-        self.worker_task_sender
-            .send(WorkerTask::StopAll)
-            .unwrap_or_else(|_| error!(queue_full_err));
-        for entry in self.control_handles.drain() {
-            debug!("stop-all - stopping handle {:?}", entry.0);
-            entry.1.cancellation_token.cancel();
-        }
-        self.control_handles.clear();
-    }
-
     pub fn create_player(&mut self, actuators: Vec<Arc<Actuator>>) -> PatternPlayer {
         let empty_settings = actuators.iter().map(|_| ActuatorSettings::None).collect::<Vec<ActuatorSettings>>();
         self.create_player_with_settings(actuators, empty_settings)
@@ -137,6 +85,59 @@ impl ButtplugScheduler {
             scalar_resolution_ms: self.settings.scalar_resolution_ms,
         }
     }
+
+
+    pub fn update_task(&mut self, handle: i32, speed: Speed) -> bool {
+        if self.control_handles.contains_key(&handle) {
+            debug!("updating handle {}", handle);
+            let _ = self
+                .control_handles
+                .get(&handle)
+                .unwrap()
+                .update_sender
+                .send(speed);
+            true
+        } else {
+            error!("Unknown handle {}", handle);
+            false
+        }
+    }
+
+    pub fn stop_task(&mut self, handle: i32) {
+        if self.control_handles.contains_key(&handle) {
+            debug!("stop handle {}", handle);
+            self.control_handles
+                .remove(&handle)
+                .unwrap()
+                .cancellation_token
+                .cancel();
+        } else {
+            error!("Unknown handle {}", handle);
+        }
+    }
+
+    pub fn stop_all(&mut self) {
+        let queue_full_err = "Event sender full";
+        self.worker_task_sender
+            .send(WorkerTask::StopAll)
+            .unwrap_or_else(|_| error!(queue_full_err));
+        for entry in self.control_handles.drain() {
+            debug!("stop-all - stopping handle {:?}", entry.0);
+            entry.1.cancellation_token.cancel();
+        }
+        self.control_handles.clear();
+    }
+
+    pub fn clean_finished_tasks(&mut self) {
+        self.control_handles
+            .retain(|_, handle| !handle.cancellation_token.is_cancelled());
+    }
+
+    fn get_next_handle(&mut self) -> i32 {
+        self.last_handle += 1;
+        self.last_handle
+    }
+
 }
 
 async fn cancellable_wait(duration: Duration, cancel: &CancellationToken) -> bool {
