@@ -1,8 +1,9 @@
 use std::fmt::{Display, self};
 
 use funscript::FSPoint;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Speed {
     pub value: u16,
 }

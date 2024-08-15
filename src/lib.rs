@@ -13,11 +13,13 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
-mod access;
 pub mod actuator;
 pub mod player;
 pub mod speed;
 pub mod settings;
+pub mod client;
+
+mod access;
 mod worker;
 
 #[derive(Debug)]
@@ -85,7 +87,6 @@ impl ButtplugScheduler {
             scalar_resolution_ms: self.settings.scalar_resolution_ms,
         }
     }
-
 
     pub fn update_task(&mut self, handle: i32, speed: Speed) -> bool {
         if self.control_handles.contains_key(&handle) {
