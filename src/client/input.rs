@@ -2,12 +2,9 @@ use std::{sync::Arc, time::Duration};
 
 use buttplug::core::message::ActuatorType;
 use cxx::{CxxString, CxxVector};
-use funscript::FScript;
 use tracing::{debug, error};
 
 use crate::{actuator::Actuator, devices::{sanitize_name_list, BpDeviceSettings}};
-
-use super::connection::Task;
 
 pub fn parse_csv(input: &str) -> Vec<String> {
     let mut list = vec![];
@@ -17,33 +14,6 @@ pub fn parse_csv(input: &str) -> Vec<String> {
         }
     }
     list
-}
-
-#[derive(Debug)]
-pub struct DeviceCommand {
-    pub task: Task,
-    pub duration: Duration,
-    pub fscript: Option<FScript>,
-    pub body_parts: Vec<String>,
-    pub actuator_types: Vec<ActuatorType>,
-}
-
-impl DeviceCommand {
-    pub fn from_inputs(
-        task: Task,
-        actuator_type: &[ActuatorType],
-        time_sec: f32,
-        body_parts: &CxxVector<CxxString>,
-        fscript: Option<FScript>,
-    ) -> Self {
-        Self {
-            actuator_types: actuator_type.to_vec(),
-            task,
-            duration: get_duration_from_secs(time_sec),
-            fscript,
-            body_parts: read_input_string(body_parts),
-        }
-    }
 }
 
 pub fn get_duration_from_secs(secs: f32) -> Duration {

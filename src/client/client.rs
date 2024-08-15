@@ -44,7 +44,7 @@ use super::status::*;
 
 pub static ERROR_HANDLE: i32 = -1;
 
-pub struct Telekinesis {
+pub struct BpClient {
     pub settings: TkSettings,
     pub connection_events: crossbeam_channel::Receiver<TkConnectionEvent>,
     pub status: Status,
@@ -55,12 +55,12 @@ pub struct Telekinesis {
     status_event_sender: crossbeam_channel::Sender<TkConnectionEvent>,
 }
 
-impl Telekinesis {
+impl BpClient {
     pub fn connect_with<T, Fn, Fut>(
         connect_action: Fn,
         provided_settings: Option<TkSettings>,
         type_name: TkConnectionType,
-    ) -> Result<Telekinesis, anyhow::Error>
+    ) -> Result<BpClient, anyhow::Error>
     where
         Fn: FnOnce() -> Fut + Send + 'static,
         Fut: Future<Output = T> + Send,
@@ -75,7 +75,7 @@ impl Telekinesis {
             scalar_resolution_ms: 100,
         });
 
-        let telekinesis = Telekinesis {
+        let client = BpClient {
             command_sender: command_sender.clone(),
             connection_events: event_receiver,
             runtime: Runtime::new()?,
@@ -85,8 +85,8 @@ impl Telekinesis {
             status_event_sender: event_sender_internal.clone(),
             status: Status::new(event_receiver_internal, &settings),
         };
-        info!(?telekinesis, "connecting...");
-        telekinesis.runtime.spawn(async move {
+        info!(?client, "connecting...");
+        client.runtime.spawn(async move {
             let client = with_connector(connect_action().await).await;
             handle_connection(
                 event_sender_client,
@@ -99,18 +99,18 @@ impl Telekinesis {
             .await;
             debug!("connection handling stopped");
         });
-        telekinesis.runtime.spawn(async move {
+        client.runtime.spawn(async move {
             debug!("starting worker thread");
             worker.run_worker_thread().await;
             debug!("worked thread stopped");
         });
-        Ok(telekinesis)
+        Ok(client)
     }
 }
 
 #[cfg(feature = "testing")]
-pub fn get_test_connection(settings: TkSettings) -> Result<Telekinesis, Error> {
-    Telekinesis::connect_with(
+pub fn get_test_connection(settings: TkSettings) -> Result<BpClient, Error> {
+    BpClient::connect_with(
         || async move { FakeDeviceConnector::device_demo().0 },
         Some(options),
         TkConnectionType::Test,
@@ -118,23 +118,23 @@ pub fn get_test_connection(settings: TkSettings) -> Result<Telekinesis, Error> {
 }
 
 #[cfg(not(feature = "testing"))]
-pub fn get_test_connection(_: TkSettings) -> Result<Telekinesis, Error> {
+pub fn get_test_connection(_: TkSettings) -> Result<BpClient, Error> {
     Err(anyhow!("Compiled without testing support"))
 }
 
-impl Telekinesis {
-    pub fn connect(settings: TkSettings) -> Result<Telekinesis, Error> {
+impl BpClient {
+    pub fn connect(settings: TkSettings) -> Result<BpClient, Error> {
         let settings_clone = settings.clone();
         match settings.connection {
             TkConnectionType::WebSocket(endpoint) => {
                 let uri = format!("ws://{}", endpoint);
-                Telekinesis::connect_with(
+                BpClient::connect_with(
                     || async move { new_json_ws_client_connector(&uri) },
                     Some(settings_clone),
                     TkConnectionType::WebSocket(endpoint),
                 )
             }
-            TkConnectionType::InProcess => Telekinesis::connect_with(
+            TkConnectionType::InProcess => BpClient::connect_with(
                 || async move { in_process_connector() },
                 Some(settings),
                 TkConnectionType::InProcess,
@@ -273,16 +273,14 @@ impl Telekinesis {
                 }).await,
                 Control::StrokePattern(pattern) => {
                     match read_pattern(&pattern_path, &pattern, false) {
-                        Some(fscript) => player.play_scalar(duration, speed).await,
+                        Some(_) => player.play_scalar(duration, speed).await,
                         None => panic!("fscript not found"), // todo different
                     }
                 },
             };
-
-            let task_clone_2 = action_clone.clone();
             info!(handle, "done");
             let event = match result {
-                Ok(()) => TkConnectionEvent::ActionDone(task_clone_2, now.elapsed(), handle),
+                Ok(()) => TkConnectionEvent::ActionDone(action_clone, now.elapsed(), handle),
                 Err(err) => TkConnectionEvent::ActionError(err.actuator, err.bp_error.to_string()),
             };
             client_sender_clone.send(event.clone()).expect("never full");
@@ -310,16 +308,16 @@ where
     T: ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage>
         + 'static,
 {
-    let buttplug = ButtplugClient::new("Telekinesis");
+    let buttplug = ButtplugClient::new("BpClient");
     if let Err(err) = buttplug.connect(connector).await {
         error!("Could not connect client. Error: {}.", err);
     }
     buttplug
 }
 
-impl fmt::Debug for Telekinesis {
+impl fmt::Debug for BpClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Telekinesis")
+        f.debug_struct("BpClient")
             .field("settings", &self.settings)
             .finish()
     }
@@ -348,7 +346,7 @@ mod tests {
         };
     }
 
-    impl Telekinesis {
+    impl BpClient {
         pub fn await_connect(&mut self, devices: usize) {
             assert_timeout!(self.status.actuators().len() >= devices, "Awaiting connect");
         }
@@ -356,7 +354,7 @@ mod tests {
 
     /// Vibrate
     pub fn test_cmd(
-        tk: &mut Telekinesis,
+        tk: &mut BpClient,
         task: Task,
         duration: Duration,
         body_parts: Vec<String>,
@@ -431,7 +429,7 @@ mod tests {
 
         // act
         let mut tk =
-            Telekinesis::connect_with(|| async move { connector }, None, TkConnectionType::Test)
+            BpClient::connect_with(|| async move { connector }, None, TkConnectionType::Test)
                 .unwrap();
         tk.await_connect(count);
         for actuator_id in tk.status.get_known_actuator_ids() {
@@ -524,10 +522,10 @@ mod tests {
         pattern_name: &str,
         duration: Duration,
         vibration_pattern: bool,
-    ) -> (Telekinesis, i32) {
+    ) -> (BpClient, i32) {
         let settings = TkSettings::new();
-        let pattern_path = String::from("../deploy/Data/SKSE/Plugins/Telekinesis/Patterns");
-        let mut tk = Telekinesis::connect_with(
+        let pattern_path = String::from("../deploy/Data/SKSE/Plugins/BpClient/Patterns");
+        let mut tk = BpClient::connect_with(
             || async move { in_process_connector() },
             Some(settings),
             TkConnectionType::Test,
@@ -561,7 +559,7 @@ mod tests {
         let mut settings = TkSettings::new();
         settings.connection = TkConnectionType::WebSocket(String::from("127.0.0.1:12345"));
 
-        let mut tk = Telekinesis::connect(settings).unwrap();
+        let mut tk = BpClient::connect(settings).unwrap();
         tk.scan_for_devices();
 
         thread::sleep(Duration::from_secs(5));
@@ -591,7 +589,7 @@ mod tests {
         let mut settings = TkSettings::new();
         settings.connection = TkConnectionType::WebSocket(String::from("bogushost:6572"));
 
-        let mut tk = Telekinesis::connect(settings).unwrap();
+        let mut tk = BpClient::connect(settings).unwrap();
         tk.scan_for_devices();
         thread::sleep(Duration::from_secs(5));
         match tk.status.connection_status() {
@@ -769,14 +767,14 @@ mod tests {
     fn wait_for_connection(
         devices: Vec<DeviceAdded>,
         settings: Option<TkSettings>,
-    ) -> (Telekinesis, FakeConnectorCallRegistry) {
+    ) -> (BpClient, FakeConnectorCallRegistry) {
         let (connector, call_registry) = FakeDeviceConnector::new(devices);
         let count = connector.devices.len();
 
         // act
         let mut settings = settings.unwrap_or(TkSettings::new());
-        settings.pattern_path = String::from("../deploy/Data/SKSE/Plugins/Telekinesis/Patterns");
-        let mut tk = Telekinesis::connect_with(
+        settings.pattern_path = String::from("../deploy/Data/SKSE/Plugins/BpClient/Patterns");
+        let mut tk = BpClient::connect_with(
             || async move { connector },
             Some(settings),
             TkConnectionType::Test,
