@@ -36,7 +36,7 @@ impl Control {
         match self {
             Control::Scalar(y) => y.iter().map(|x| x.clone().into()).collect(),
             Control::ScalarPattern(_, y) => y.iter().map(|x| x.clone().into()).collect(),
-            Control::Stroke(range) => vec![ActuatorType::Position],
+            Control::Stroke(_) => vec![ActuatorType::Position],
             Control::StrokePattern(_) => vec![ActuatorType::Position],
         }
     }
@@ -69,12 +69,32 @@ pub enum BodyParts {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use crate::speed::Speed;
 
     use super::*;
 
-    // pub fn read_config( path: String ) -> Actions {
-    // }
+    pub fn read_config(config_dir: String) -> Actions {
+        let mut results = vec![];
+
+        if let Ok(dir) = fs::read_dir(config_dir) {
+            for entry in dir.into_iter().flatten() {
+                if entry.path().is_file() && entry.path()
+                                                    .extension()
+                                                    .and_then(|x| x.to_str())
+                                                    .map(|x| x.eq_ignore_ascii_case("json"))
+                                                    .unwrap_or(false) {
+
+                    if let Some(actions) = fs::read_to_string(entry.path()).ok().and_then( |x| serde_json::from_str::<Actions>(&x).ok() ) {
+                        results.append(&mut actions.0.clone());
+                    }
+                }
+            }
+        }
+
+        Actions(results)
+    }
 
     pub fn build_config() {
         let default_actions = Actions(vec![
