@@ -97,7 +97,7 @@ impl Default for TkSettings {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod settings_tests {
     use crate::{client::connection::TkConnectionType, devices::BpDeviceSettings};
 
     use super::*;
@@ -130,11 +130,11 @@ mod tests {
         setting.device_settings.devices.push(BpDeviceSettings::from_identifier("c"));
 
         let file = "test_config.json";
-        let (path, _tmp_dir) = create_temp_file(file, &serde_json::to_string(&setting).unwrap());
+        let (path, tmp_dir, tmp_handle) = create_temp_file(file, &serde_json::to_string(&setting).unwrap());
 
         // Act
         println!("{}", path);
-        let settings = TkSettings::try_read_or_default(_tmp_dir.path().to_str().unwrap(), file);
+        let settings = TkSettings::try_read_or_default(&tmp_dir, file);
         assert_eq!(settings.device_settings.devices.len(), 3);
     }
 
@@ -147,11 +147,11 @@ mod tests {
     #[test]
     fn file_unreadable_returns_default() {
         // File
-        let (_, tmp_dir) = create_temp_file("bogus.json", "Some stuff that is not valid json");
+        let (_, tmp_dir, _) = create_temp_file("bogus.json", "Some stuff that is not valid json");
 
         // Act
         let settings =
-            TkSettings::try_read_or_default(tmp_dir.path().to_str().unwrap(), "bogus.json");
+            TkSettings::try_read_or_default(&tmp_dir, "bogus.json");
 
         // Assert
         assert_eq!(settings.device_settings.devices.len(), settings.device_settings.devices.len());
@@ -218,14 +218,14 @@ mod tests {
 
         // act
         let target_file = "some_target_file.json";
-        let (_, tmpdir) = create_temp_file(target_file, "");
-        settings.try_write(tmpdir.path().to_str().unwrap(), target_file);
+        let (_, tmpdir, tmp_handle) = create_temp_file(target_file, "");
+        settings.try_write(&tmpdir, target_file);
 
         // assert
         let settings2 =
-            TkSettings::try_read_or_default(tmpdir.path().to_str().unwrap(), target_file);
+            TkSettings::try_read_or_default(&tmpdir, target_file);
         assert_eq!(settings2.device_settings.devices[0].actuator_id, "foobar");
-        assert_ok!(tmpdir.close());
+        assert_ok!(tmp_handle.close());
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
         }
     }
 
-    fn create_temp_file(name: &str, content: &str) -> (String, TempDir) {
+    pub fn create_temp_file(name: &str, content: &str) -> (String, String, TempDir) {
         let tmp_path = tempdir().unwrap();
         assert_ok!(fs::create_dir_all(tmp_path.path().to_str().unwrap()));
 
@@ -260,6 +260,10 @@ mod tests {
         let path = file_path.to_str().unwrap();
         assert_ok!(fs::write(file_path.clone(), content));
 
-        (path.into(), tmp_path)
+        (path.into(), tmp_path.path().to_str().unwrap().into(), tmp_path)
+    }
+
+    pub fn add_temp_file(name: &str, content: &str, tmp_path: &TempDir) {
+        assert_ok!(fs::write(tmp_path.path().join(name).clone(), content));
     }
 }

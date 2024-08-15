@@ -83,6 +83,8 @@ pub async fn handle_connection(
         try_send_event(&sender_clone, event.clone());
         try_send_event(&event_sender_internal, event);
     };
+
+    // TODO: This can probably send events directly
     Handle::current().spawn(async move {
         debug!("starting connection thread...");
         loop {

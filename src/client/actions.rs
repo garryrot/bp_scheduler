@@ -1,5 +1,7 @@
 // actions/*.json
 
+use std::fs;
+
 use buttplug::core::message::ActuatorType;
 use serde::{Deserialize, Serialize};
 
@@ -67,37 +69,39 @@ pub enum BodyParts {
     Tags(Vec<String>),
 }
 
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use crate::speed::Speed;
-
-    use super::*;
-
-    pub fn read_config(config_dir: String) -> Actions {
-        let mut results = vec![];
-
-        if let Ok(dir) = fs::read_dir(config_dir) {
-            for entry in dir.into_iter().flatten() {
-                if entry.path().is_file() && entry.path()
-                                                    .extension()
-                                                    .and_then(|x| x.to_str())
-                                                    .map(|x| x.eq_ignore_ascii_case("json"))
-                                                    .unwrap_or(false) {
-
-                    if let Some(actions) = fs::read_to_string(entry.path()).ok().and_then( |x| serde_json::from_str::<Actions>(&x).ok() ) {
-                        results.append(&mut actions.0.clone());
-                    }
+pub fn read_config(config_dir: String) -> Actions {
+    let mut results = vec![];
+    if let Ok(dir) = fs::read_dir(config_dir) {
+        for entry in dir.into_iter().flatten() {
+            if entry.path().is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .map(|x| x.eq_ignore_ascii_case("json"))
+                    .unwrap_or(false)
+            {
+                if let Some(actions) = fs::read_to_string(entry.path())
+                    .ok()
+                    .and_then(|x| serde_json::from_str::<Actions>(&x).ok())
+                {
+                    results.append(&mut actions.0.clone());
                 }
             }
         }
-
-        Actions(results)
     }
+    Actions(results)
+}
 
-    pub fn build_config() {
-        let default_actions = Actions(vec![
+#[cfg(test)]
+mod tests {
+    use crate::{client::settings::settings_tests::*, speed::Speed};
+
+    use super::*;
+
+    #[test]
+    pub fn build_default_actions() {
+        let actions = Actions(vec![
             Action {
                 name: "vibrate".into(),
                 speed: Speed::new(100),
@@ -123,8 +127,57 @@ mod tests {
                     ScalarActuators::Inflate,
                 ]),
             },
+            Action {
+                name: "stroke.linear".into(), 
+                speed: Speed::new(100), 
+                control: Control::Stroke( StrokeRange { min_ms: 100, max_ms: 1500, min_pos: 0.0, max_pos: 1.0 } )
+            },
+            Action {
+                name: "stroke.oscillate".into(), 
+                speed: Speed::new(100), 
+                control: Control::Scalar(vec![ ScalarActuators::Oscillate ])
+            }
         ]);
 
-        serde_json::to_string_pretty(&default_actions).unwrap();
+        let json = serde_json::to_string_pretty(&actions).unwrap();
+
+        println!("{}", json);
+    }
+
+    #[test]
+    pub fn serialize_and_deserialize_actions() {
+        let a1 = Actions(vec![
+            Action {
+                name: "1".into(),
+                speed: Speed::new(100),
+                control: Control::Scalar(vec![]),
+            },
+            Action {
+                name: "2".into(),
+                speed: Speed::new(100),
+                control: Control::Scalar(vec![ScalarActuators::Constrict]),
+            },
+        ]);
+        let s1 = serde_json::to_string_pretty(&a1).unwrap();
+        let a2 = Actions(vec![
+            Action {
+                name: "3".into(),
+                speed: Speed::new(100),
+                control: Control::Scalar(vec![ScalarActuators::Constrict]),
+            },
+            Action {
+                name: "4".into(),
+                speed: Speed::new(100),
+                control: Control::Scalar(vec![
+                    ScalarActuators::Vibrate
+                ]),
+            },
+        ]);
+        let s2 = serde_json::to_string_pretty(&a2).unwrap();
+        let (_, temp_dir, tmp_path) = create_temp_file("action1.json", &s1);
+        add_temp_file("action2.json", &s2, &tmp_path);
+        let actions = read_config(temp_dir);
+        assert_eq!(actions.0.len(), 4);
+        tmp_path.close().unwrap();
     }
 }
