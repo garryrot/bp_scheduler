@@ -21,25 +21,48 @@ pub struct StrokeRange {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Action {
     pub name: String,
-    pub speed: Speed,
-    pub control: Control,
+    pub control: Vec<Control>,
+}
+
+impl Action {
+    pub fn build(name: &str, controls: Vec<Control>) -> Self {
+        let mut selectors = vec![];
+        for control in controls {
+            selectors.push( control );
+        }
+        Action {
+            name: name.into(),
+            control: selectors,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Control {
-    Scalar(Vec<ScalarActuators>),
-    ScalarPattern(String, Vec<ScalarActuators>),
-    Stroke(StrokeRange),
-    StrokePattern(String),
+    Scalar(Speed, Selector, Vec<ScalarActuators>),
+    Stroke(Speed, Selector, StrokeRange),
+    ScalarPattern(Speed, Selector, Vec<ScalarActuators>, String),
+    StrokePattern(Speed, Selector, String)
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Selector {
+    All,
+    BodyParts(Vec<String>)
+}
+
+pub enum Modulation {
+    Constant,
+    Funscript(String)
+}
+  
 impl Control {
     pub fn get_actuators(&self) -> Vec<ActuatorType> {
         match self {
-            Control::Scalar(y) => y.iter().map(|x| x.clone().into()).collect(),
-            Control::ScalarPattern(_, y) => y.iter().map(|x| x.clone().into()).collect(),
-            Control::Stroke(_) => vec![ActuatorType::Position],
-            Control::StrokePattern(_) => vec![ActuatorType::Position],
+            Control::Scalar(_, _, y) => y.iter().map(|x| x.clone().into()).collect(),
+            Control::ScalarPattern(_, _,  y, _) => y.iter().map(|x| x.clone().into()).collect(),
+            Control::Stroke(_, _,  _) => vec![ActuatorType::Position],
+            Control::StrokePattern(_, _,  _) => vec![ActuatorType::Position],
         }
     }
 }
@@ -102,76 +125,35 @@ mod tests {
     #[test]
     pub fn build_default_actions() {
         let actions = Actions(vec![
-            Action {
-                name: "vibrate".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![ScalarActuators::Vibrate]),
-            },
-            Action {
-                name: "constrict".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![ScalarActuators::Constrict]),
-            },
-            Action {
-                name: "inflate".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![ScalarActuators::Constrict]),
-            },
-            Action {
-                name: "scalar".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![
-                    ScalarActuators::Vibrate,
-                    ScalarActuators::Constrict,
-                    ScalarActuators::Oscillate,
-                    ScalarActuators::Inflate,
-                ]),
-            },
-            Action {
-                name: "stroke.linear".into(), 
-                speed: Speed::new(100), 
-                control: Control::Stroke( StrokeRange { min_ms: 100, max_ms: 1500, min_pos: 0.0, max_pos: 1.0 } )
-            },
-            Action {
-                name: "stroke.oscillate".into(), 
-                speed: Speed::new(100), 
-                control: Control::Scalar(vec![ ScalarActuators::Oscillate ])
-            }
+            Action::build("vibrate", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![ScalarActuators::Vibrate]) ]),
+            Action::build("constrict", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![ScalarActuators::Constrict]) ]),
+            Action::build("inflate", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![ScalarActuators::Constrict]) ]),
+            Action::build("scalar", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![
+                ScalarActuators::Vibrate,
+                ScalarActuators::Constrict,
+                ScalarActuators::Oscillate,
+                ScalarActuators::Inflate,
+            ])]),
+            Action::build("stroke.linear", vec![ Control::Stroke(Speed::new(100), Selector::All, StrokeRange { min_ms: 100, max_ms: 1500, min_pos: 0.0, max_pos: 1.0 } ) ]),
+            Action::build("stroke.oscillate", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![ ScalarActuators::Oscillate ]) ] )
         ]);
 
         let json = serde_json::to_string_pretty(&actions).unwrap();
-
         println!("{}", json);
     }
 
     #[test]
     pub fn serialize_and_deserialize_actions() {
         let a1 = Actions(vec![
-            Action {
-                name: "1".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![]),
-            },
-            Action {
-                name: "2".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![ScalarActuators::Constrict]),
-            },
-        ]);
+            Action::build("1", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![]) ]),
+            Action::build("2", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![ScalarActuators::Constrict]) ]),
+        ]); 
         let s1 = serde_json::to_string_pretty(&a1).unwrap();
         let a2 = Actions(vec![
-            Action {
-                name: "3".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![ScalarActuators::Constrict]),
-            },
-            Action {
-                name: "4".into(),
-                speed: Speed::new(100),
-                control: Control::Scalar(vec![
-                    ScalarActuators::Vibrate
-                ]),
-            },
+            Action::build("3", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![ScalarActuators::Constrict]) ]),
+            Action::build("4", vec![ Control::Scalar(Speed::new(100), Selector::All, vec![
+                ScalarActuators::Vibrate
+            ]) ])
         ]);
         let s2 = serde_json::to_string_pretty(&a2).unwrap();
         let (_, temp_dir, tmp_path) = create_temp_file("action1.json", &s1);

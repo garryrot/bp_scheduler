@@ -206,19 +206,39 @@ impl BpClient {
         }
     }
 
-    pub fn dispatch_cmd_2(&mut self, cmd: Action) {}
-
     pub fn dispatch_cmd(
         &mut self,
         action: Action,
         body_parts: Vec<String>,
         speed: Speed,
+        duration: Duration) -> i32 {
+        let mut handle = -1;
+        for act in action.control.clone() {
+            let filter_parts = match act.clone() {
+                Control::Scalar(_, Selector::BodyParts(parts), _) => parts,
+                Control::Stroke(_, Selector::BodyParts(parts), _) => parts,
+                Control::ScalarPattern(_, Selector::BodyParts(parts), _, _) => parts,
+                Control::StrokePattern(_, Selector::BodyParts(parts), _) => parts,
+                _ => body_parts.clone()
+            };
+            handle = self._dispatch_control(&action, act, filter_parts, speed, duration, handle);
+        }
+        handle
+    }
+
+    fn _dispatch_control(
+        &mut self,
+        action: &Action,
+        control: Control,
+        body_parts: Vec<String>,
+        speed: Speed,
         duration: Duration,
+        handle: i32
     ) -> i32 {
         self.scheduler.clean_finished_tasks();
         let action_clone = action.clone();
         let actuators = self.status.connected_actuators();
-        let actuator_types = action.control.get_actuators();
+        let actuator_types = control.get_actuators();
         let pattern_path = self.settings.pattern_path.clone();
         let devices = TkParams::filter_devices(
             &actuators,
@@ -236,9 +256,10 @@ impl BpClient {
                     .actuator_settings
             })
             .collect();
+
         let player = self
             .scheduler
-            .create_player_with_settings(devices, settings);
+            .create_player_with_settings(devices, settings, handle);
         let handle = player.handle;
 
         info!(handle, "dispatching {:?}", action);
@@ -255,15 +276,15 @@ impl BpClient {
                     player.handle,
                 ))
                 .expect("never full");
-            let result = match action.control {
-                Control::Scalar(_) => player.play_scalar(duration, speed).await,
-                Control::ScalarPattern(pattern, _) =>  {
+            let result = match control {
+                Control::Scalar(_, _, _) => player.play_scalar(duration, speed).await,
+                Control::ScalarPattern(_, _, _, pattern) =>  {
                     match read_pattern(&pattern_path, &pattern, true) {
                         Some(fscript) => player.play_scalar_pattern(duration, fscript, speed).await,
                         None => panic!("fscript not found"), // todo differnet
                     }
                 },
-                Control::Stroke(range) => player.play_linear_stroke(duration, speed, LinearRange {
+                Control::Stroke(_, _, range) => player.play_linear_stroke(duration, speed, LinearRange {
                     min_ms: range.min_ms,
                     max_ms: range.max_ms,
                     min_pos: range.min_pos,
@@ -271,7 +292,7 @@ impl BpClient {
                     invert: false,
                     scaling: LinearSpeedScaling::Linear,
                 }).await,
-                Control::StrokePattern(pattern) => {
+                Control::StrokePattern(_, _, pattern) => {
                     match read_pattern(&pattern_path, &pattern, false) {
                         Some(_) => player.play_scalar(duration, speed).await,
                         None => panic!("fscript not found"), // todo different
@@ -367,11 +388,12 @@ mod tests {
             Task::Linear(speed, _) => speed,
             Task::LinearStroke(speed, _) => speed,
         };
-        tk.dispatch_cmd(Action {
-            name: "something".into(),
-            speed,
-            control: Control::Scalar(vec![ ScalarActuators::Vibrate ]),
-        }, body_parts, speed, duration )
+        tk.dispatch_cmd(
+            Action::build("something", vec![Control::Scalar( 
+                Speed::new(100),
+                Selector::All,
+                vec![ ScalarActuators::Vibrate ],
+            )]), body_parts, speed, duration )
     }
 
     #[test]

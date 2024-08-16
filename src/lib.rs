@@ -26,7 +26,7 @@ mod worker;
 pub struct ButtplugScheduler {
     worker_task_sender: UnboundedSender<WorkerTask>,
     settings: PlayerSettings,
-    control_handles: HashMap<i32, ControlHandle>,
+    control_handles: HashMap<i32, Vec<ControlHandle>>,
     last_handle: i32,
 }
 
@@ -57,21 +57,34 @@ impl ButtplugScheduler {
 
     pub fn create_player(&mut self, actuators: Vec<Arc<Actuator>>) -> PatternPlayer {
         let empty_settings = actuators.iter().map(|_| ActuatorSettings::None).collect::<Vec<ActuatorSettings>>();
-        self.create_player_with_settings(actuators, empty_settings)
+        self.create_player_with_settings(actuators, empty_settings, -1)
     }
 
-    pub fn create_player_with_settings(&mut self, actuators: Vec<Arc<Actuator>>, settings: Vec<ActuatorSettings>) -> PatternPlayer {
+    pub fn create_player_with_settings(&mut self, actuators: Vec<Arc<Actuator>>, settings: Vec<ActuatorSettings>, existing_handle: i32) -> PatternPlayer {
         let (update_sender, update_receiver) = unbounded_channel::<Speed>();
-
         let cancellation_token = CancellationToken::new();
-        let handle = self.get_next_handle();
-        self.control_handles.insert(
-            handle,
-            ControlHandle {
-                cancellation_token: cancellation_token.clone(),
-                update_sender,
-            },
-        );
+        let mut handle = existing_handle;
+
+        if handle > 0 {
+            if let Some(ref mut control_handles) = self.control_handles.get_mut(&handle) {
+                control_handles.push(ControlHandle {
+                    cancellation_token: cancellation_token.clone(),
+                    update_sender,
+                })
+            } else {
+                // TODO Remove this before release
+                panic!("unknown handle {}", handle)
+            }
+        } else {
+            handle = self.get_next_handle();
+            self.control_handles.insert(
+                handle,
+                vec![ControlHandle {
+                    cancellation_token: cancellation_token.clone(),
+                    update_sender,
+                }],
+            );
+        }
 
         let (result_sender, result_receiver) =
             unbounded_channel::<WorkerResult>();
@@ -91,12 +104,13 @@ impl ButtplugScheduler {
     pub fn update_task(&mut self, handle: i32, speed: Speed) -> bool {
         if self.control_handles.contains_key(&handle) {
             debug!("updating handle {}", handle);
-            let _ = self
+            let handles = self
                 .control_handles
                 .get(&handle)
-                .unwrap()
-                .update_sender
-                .send(speed);
+                .unwrap();
+            for handle in handles {
+                let _ = handle.update_sender.send(speed);
+            }
             true
         } else {
             error!("Unknown handle {}", handle);
@@ -107,11 +121,13 @@ impl ButtplugScheduler {
     pub fn stop_task(&mut self, handle: i32) {
         if self.control_handles.contains_key(&handle) {
             debug!("stop handle {}", handle);
-            self.control_handles
+            let handles = self.control_handles
                 .remove(&handle)
-                .unwrap()
-                .cancellation_token
-                .cancel();
+                .unwrap();
+
+            for handle in handles {
+                handle.cancellation_token.cancel();
+            }
         } else {
             error!("Unknown handle {}", handle);
         }
@@ -124,14 +140,18 @@ impl ButtplugScheduler {
             .unwrap_or_else(|_| error!(queue_full_err));
         for entry in self.control_handles.drain() {
             debug!("stop-all - stopping handle {:?}", entry.0);
-            entry.1.cancellation_token.cancel();
+            for handle in entry.1 {
+                handle.cancellation_token.cancel()
+            }
         }
         self.control_handles.clear();
     }
 
     pub fn clean_finished_tasks(&mut self) {
         self.control_handles
-            .retain(|_, handle| !handle.cancellation_token.is_cancelled());
+            .retain(|_, handles| {
+                ! handles.first().and_then(|x| Some(x.cancellation_token.is_cancelled()) ).unwrap_or(false)
+            }  )
     }
 
     fn get_next_handle(&mut self) -> i32 {
@@ -248,8 +268,8 @@ mod tests {
                 .create_player(get_actuators(self.all_devices.clone()))
         }
 
-        fn get_player_with_settings(&mut self, settings: Vec<ActuatorSettings>) -> PatternPlayer {
-            self.scheduler.create_player_with_settings(get_actuators(self.all_devices.clone()), settings)
+        fn get_player_with_settings(&mut self, settings: Vec<ActuatorSettings>, handle: i32) -> PatternPlayer {
+            self.scheduler.create_player_with_settings(get_actuators(self.all_devices.clone()), settings, handle)
         }
 
         async fn play_linear(&mut self, funscript: FScript, duration: Duration) {
@@ -398,7 +418,7 @@ mod tests {
         // act
         let start = Instant::now();
         let duration_ms = range.max_ms as f64 * 2.5;
-        let player = test.get_player_with_settings(vec![ ActuatorSettings::Linear(range)]);
+        let player = test.get_player_with_settings(vec![ ActuatorSettings::Linear(range)], -1);
         let _ = player
             .play_linear_stroke(Duration::from_millis(duration_ms as u64), speed, LinearRange::max())
             .await;
