@@ -1,9 +1,7 @@
+
 use anyhow::anyhow;
+use rand::Rng;
 use anyhow::Error;
-use client::input::TkParams;
-use client::pattern::read_pattern;
-use settings::linear::LinearRange;
-use settings::linear::LinearSpeedScaling;
 
 use std::time::Duration;
 use std::{
@@ -32,12 +30,16 @@ use buttplug::{
     },
 };
 
+use client::input::*;
+use client::pattern::*;
+use settings::linear::*;
+use actions::*;
+
 #[cfg(feature = "testing")]
 use bp_fakes::FakeDeviceConnector;
 
 use crate::*;
 
-use super::actions::*;
 use super::connection::*;
 use super::settings::*;
 use super::status::*;
@@ -213,15 +215,12 @@ impl BpClient {
         speed: Speed,
         duration: Duration) -> i32 {
         let mut handle = -1;
-        for act in action.control.clone() {
-            let filter_parts = match act.clone() {
-                Control::Scalar(_, Selector::BodyParts(parts), _) => parts,
-                Control::Stroke(_, Selector::BodyParts(parts), _) => parts,
-                Control::ScalarPattern(_, Selector::BodyParts(parts), _, _) => parts,
-                Control::StrokePattern(_, Selector::BodyParts(parts), _) => parts,
-                _ => body_parts.clone()
+        for control in action.control.clone() {
+            let filter_parts = match control.get_selector() {
+                Selector::All => body_parts.clone(),
+                Selector::BodyParts(filter) => filter,
             };
-            handle = self._dispatch_control(&action, act, filter_parts, speed, duration, handle);
+            handle = self._dispatch_control(&action, control, filter_parts, speed, duration, handle);
         }
         handle
     }
@@ -277,13 +276,18 @@ impl BpClient {
                 ))
                 .expect("never full");
             let result = match control {
-                Control::Scalar(_, _, _) => player.play_scalar(duration, speed).await,
-                Control::ScalarPattern(_, _, _, pattern) =>  {
+                Control::Scalar(_, Strength::Constant(_), _) => player.play_scalar(duration, speed).await,
+                Control::Scalar(_, strength, _) => {
+                    let pattern = match strength {
+                        Strength::Constant(_) => panic!(),
+                        Strength::Funscript(_, pattern) => pattern.clone(),
+                        Strength::RandomFunscript(_, patterns) => patterns.get(rand::thread_rng().gen_range(0..patterns.len()-1)).unwrap().clone()
+                    };
                     match read_pattern(&pattern_path, &pattern, true) {
                         Some(fscript) => player.play_scalar_pattern(duration, fscript, speed).await,
                         None => panic!("fscript not found"), // todo differnet
                     }
-                },
+                }
                 Control::Stroke(_, _, range) => player.play_linear_stroke(duration, speed, LinearRange {
                     min_ms: range.min_ms,
                     max_ms: range.max_ms,
@@ -346,6 +350,7 @@ impl fmt::Debug for BpClient {
 
 #[cfg(test)]
 mod tests {
+    use actions::*;
     use buttplug::core::message::{ActuatorType, DeviceAdded};
     use funscript::FScript;
     use std::time::Instant;
@@ -390,8 +395,8 @@ mod tests {
         };
         tk.dispatch_cmd(
             Action::build("something", vec![Control::Scalar( 
-                Speed::new(100),
                 Selector::All,
+                Strength::Constant(100),
                 vec![ ScalarActuators::Vibrate ],
             )]), body_parts, speed, duration )
     }

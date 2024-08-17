@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub mod devices;
 pub mod linear;
 pub mod scalar;
+pub mod actions;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum ActuatorSettings {

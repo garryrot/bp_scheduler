@@ -4,4 +4,3 @@ pub mod client;
 pub mod status;
 pub mod input;
 pub mod settings;
-pub mod actions;
