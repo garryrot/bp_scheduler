@@ -10,6 +10,7 @@ use crate::devices::BpSettings;
 use super::connection::TkConnectionType;
 
 pub static DEFAULT_PATTERN_PATH: &str = "Data\\SKSE\\Plugins\\Telekinesis\\Patterns";
+pub static DEFAULT_ACTION_PATH: &str = "Data\\SKSE\\Plugins\\Telekinesis\\Actions";
 pub static SETTINGS_PATH: &str = "Data\\SKSE\\Plugins";
 pub static SETTINGS_FILE: &str = "Telekinesis.v2.json";
 
@@ -42,6 +43,7 @@ pub struct TkSettings {
     pub device_settings: BpSettings,
     #[serde(skip)]
     pub pattern_path: String,
+    pub action_path: String,
 }
 
 impl TkSettings {
@@ -54,6 +56,7 @@ impl TkSettings {
                 devices: vec![]
             },
             pattern_path: String::from(DEFAULT_PATTERN_PATH),
+            action_path: String::from(DEFAULT_ACTION_PATH)
         }
     }
     pub fn try_read_or_default(settings_path: &str, settings_file: &str) -> Self {

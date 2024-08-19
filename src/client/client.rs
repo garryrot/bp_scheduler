@@ -50,6 +50,7 @@ pub struct BpClient {
     pub settings: TkSettings,
     pub connection_events: crossbeam_channel::Receiver<TkConnectionEvent>,
     pub status: Status,
+    pub actions: Actions,
     runtime: Runtime,
     command_sender: Sender<ConnectionCommand>,
     scheduler: ButtplugScheduler,
@@ -86,6 +87,7 @@ impl BpClient {
             client_event_sender: event_sender_client.clone(),
             status_event_sender: event_sender_internal.clone(),
             status: Status::new(event_receiver_internal, &settings),
+            actions: Actions(vec![])
         };
         info!(?client, "connecting...");
         client.runtime.spawn(async move {
@@ -143,6 +145,10 @@ impl BpClient {
             ),
             TkConnectionType::Test => get_test_connection(settings),
         }
+    }
+
+    pub fn read_actions(&mut self) {
+        self.actions = read_config(self.settings.action_path.clone() );
     }
 
     pub fn scan_for_devices(&self) -> bool {
@@ -208,9 +214,22 @@ impl BpClient {
         }
     }
 
-    pub fn dispatch_cmd(
+    pub fn dispatch_name(
         &mut self,
-        action: Action,
+        action_name: &str,
+        body_parts: Vec<String>,
+        speed: Speed,
+        duration: Duration) -> i32 {
+
+        if let Some(action) = self.actions.clone().0.iter().find(|x| x.name == action_name) {
+            return self.dispatch( action, body_parts, speed, duration );
+        }
+        -1
+    }
+
+    pub fn dispatch(
+        &mut self,
+        action: &Action,
         body_parts: Vec<String>,
         speed: Speed,
         duration: Duration) -> i32 {
@@ -220,7 +239,7 @@ impl BpClient {
                 Selector::All => body_parts.clone(),
                 Selector::BodyParts(filter) => filter,
             };
-            handle = self._dispatch_control(&action, control, filter_parts, speed, duration, handle);
+            handle = self._dispatch_control(&action.clone(), control, filter_parts, speed, duration, handle);
         }
         handle
     }
@@ -393,12 +412,18 @@ mod tests {
             Task::Linear(speed, _) => speed,
             Task::LinearStroke(speed, _) => speed,
         };
-        tk.dispatch_cmd(
-            Action::build("something", vec![Control::Scalar( 
-                Selector::All,
-                Strength::Constant(100),
-                vec![ ScalarActuators::Vibrate ],
-            )]), body_parts, speed, duration )
+        tk.actions = Actions(vec![
+            Action::build(
+                "foobar", 
+                vec![
+                    Control::Scalar( 
+                        Selector::All,
+                        Strength::Constant(100),
+                        vec![ ScalarActuators::Vibrate ],
+                    )] 
+            )
+        ]);
+        tk.dispatch_name( "foobar", body_parts, speed, duration )
     }
 
     #[test]

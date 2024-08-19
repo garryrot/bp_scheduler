@@ -5,10 +5,8 @@ use std::fs;
 use buttplug::core::message::ActuatorType;
 use serde::{Deserialize, Serialize};
 
-use crate::speed::Speed;
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Actions(Vec<Action>);
+pub struct Actions(pub Vec<Action>);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Action {
@@ -89,7 +87,6 @@ impl From<ScalarActuators> for buttplug::core::message::ActuatorType {
     }
 }
 
-
 pub fn read_config(config_dir: String) -> Actions {
     let mut results = vec![];
     if let Ok(dir) = fs::read_dir(config_dir) {
@@ -117,7 +114,7 @@ pub fn read_config(config_dir: String) -> Actions {
 
 #[cfg(test)]
 mod tests {
-    use crate::{client::settings::settings_tests::*, speed::Speed};
+    use crate::client::settings::settings_tests::*;
 
     use super::*;
 
@@ -289,7 +286,7 @@ mod tests {
                 )],
             ),
             Action::build(
-                "stroke.linear",
+                "linear.stroke",
                 vec![Control::Stroke(
                     Selector::All,
                     Strength::Constant(100),
@@ -302,7 +299,7 @@ mod tests {
                 )],
             ),
             Action::build(
-                "stroke.oscillate",
+                "oscillate.stroke",
                 vec![Control::Scalar(
                     Selector::All,
                     Strength::Constant(100),
