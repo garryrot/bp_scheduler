@@ -13,7 +13,10 @@ use futures::Future;
 use tracing::{debug, error, info};
 
 use tokio::sync::mpsc::Sender;
-use tokio::{runtime::Runtime, sync::mpsc::channel};
+use tokio::{
+    runtime::Runtime,
+    sync::mpsc::channel
+};
 
 use buttplug::{
     client::ButtplugClient,
@@ -221,6 +224,7 @@ impl BpClient {
         speed: Speed,
         duration: Duration) -> i32 {
 
+        // TODO: return int
         if let Some(action) = self.actions.clone().0.iter().find(|x| x.name == action_name) {
             return self.dispatch( action, body_parts, speed, duration );
         }

@@ -5,7 +5,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tracing::{error, event, info, Level};
 
-use crate::devices::BpSettings;
+use crate::{devices::BpSettings, settings};
 
 use super::connection::TkConnectionType;
 
@@ -59,7 +59,12 @@ impl TkSettings {
             action_path: String::from(DEFAULT_ACTION_PATH)
         }
     }
+
     pub fn try_read_or_default(settings_path: &str, settings_file: &str) -> Self {
+        Self::try_read_or( settings_path, settings_file, TkSettings::default() )
+    }
+
+    pub fn try_read_or(settings_path: &str, settings_file: &str, or: TkSettings) -> Self {
         let path = [settings_path, settings_file].iter().collect::<PathBuf>();
         match fs::read_to_string(path) {
             Ok(settings_json) => match serde_json::from_str::<TkSettings>(&settings_json) {
@@ -69,15 +74,16 @@ impl TkSettings {
                 }
                 Err(err) => {
                     error!("Settings path '{}' could not be parsed. Error: {}. Using default configuration.", settings_path, err);
-                    TkSettings::new()
+                    or
                 }
             },
             Err(err) => {
                 info!("Settings path '{}' could not be opened. Error: {}. Using default configuration.", settings_path, err);
-                TkSettings::new()
+                or
             }
         }
     }
+    
 
     pub fn try_write(&self, settings_path: &str, settings_file: &str) -> bool {
         let json = serde_json::to_string_pretty(self).expect("Always serializable");
