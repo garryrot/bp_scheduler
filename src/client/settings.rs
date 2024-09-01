@@ -43,6 +43,7 @@ pub struct TkSettings {
     pub device_settings: BpSettings,
     #[serde(skip)]
     pub pattern_path: String,
+    #[serde(skip)]
     pub action_path: String,
 }
 
@@ -83,7 +84,6 @@ impl TkSettings {
             }
         }
     }
-    
 
     pub fn try_write(&self, settings_path: &str, settings_file: &str) -> bool {
         let json = serde_json::to_string_pretty(self).expect("Always serializable");
