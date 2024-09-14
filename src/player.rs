@@ -27,7 +27,7 @@ pub struct PatternPlayer {
     pub handle: i32,
     pub scalar_resolution_ms: i32,
     pub actuators: Vec<Arc<Actuator>>,
-    pub settings: Vec<ActuatorSettings>,
+    pub actuator_limits: Vec<ActuatorSettings>,
     pub result_sender: UnboundedSender<WorkerResult>,
     pub result_receiver: UnboundedReceiver<WorkerResult>,
     pub update_receiver: UnboundedReceiver<Speed>,
@@ -188,7 +188,7 @@ impl PatternPlayer {
             self.worker_task_sender
                 .send(WorkerTask::Update(
                     actuator.clone(),
-                    apply_scalar_settings(speed, &self.settings[ i ]),
+                    apply_scalar_settings(speed, &self.actuator_limits[ i ]),
                     is_pattern,
                     self.handle,
                 ))
@@ -203,7 +203,7 @@ impl PatternPlayer {
             self.worker_task_sender
                 .send(WorkerTask::Start(
                     actuator.clone(),
-                    apply_scalar_settings(speed, &self.settings[ i ]),
+                    apply_scalar_settings(speed, &self.actuator_limits[ i ]),
                     is_pattern,
                     self.handle,
                 ))
@@ -233,7 +233,7 @@ impl PatternPlayer {
 
     async fn do_linear(&mut self, mut pos: f64, duration_ms: u32) -> WorkerResult {
         for (i, actuator) in self.actuators.iter().enumerate() {
-            let settings = &self.settings[ i ].linear_or_max();
+            let settings = &self.actuator_limits[ i ].linear_or_max();
             pos = settings.apply_pos(pos);
             debug!(?duration_ms, ?pos, ?settings, "linear");
             self.worker_task_sender
@@ -253,7 +253,7 @@ impl PatternPlayer {
     async fn do_stroke(&mut self, start: bool, mut speed: Speed, settings: &LinearRange) -> WorkerResult {
         let mut wait_ms = 0;
         for (i, actuator) in self.actuators.iter().enumerate() {
-            let actual_settings = settings.merge(&self.settings[ i ].linear_or_max());
+            let actual_settings = settings.merge(&self.actuator_limits[ i ].linear_or_max());
             speed = actual_settings.scaling.apply(speed);
             wait_ms = actual_settings.get_duration_ms(speed);
             let target_pos = actual_settings.get_pos(start);

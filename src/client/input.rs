@@ -50,7 +50,7 @@ pub fn read_scalar_actuator(actuator: &str) -> ActuatorType {
 pub struct TkParams {}
 
 impl TkParams {
-    pub fn filter_devices(
+    pub fn get_enabled_and_selected_devices(
         actuators: &[Arc<Actuator>],
         input_body_parts: &[String],
         actuator_types: &[ActuatorType],

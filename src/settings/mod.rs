@@ -6,6 +6,7 @@ pub mod devices;
 pub mod linear;
 pub mod scalar;
 pub mod actions;
+pub mod read;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum ActuatorSettings {

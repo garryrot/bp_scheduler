@@ -2,6 +2,7 @@
 use anyhow::anyhow;
 use rand::Rng;
 use anyhow::Error;
+use read::read_config;
 
 use std::time::Duration;
 use std::{
@@ -151,7 +152,12 @@ impl BpClient {
     }
 
     pub fn read_actions(&mut self) {
-        self.actions = read_config(self.settings.action_path.clone() );
+        self.actions = Actions( read_config(self.settings.action_path.clone() ));
+
+        info!("read {} actions...", self.actions.0.len());
+        for action in self.actions.0.iter() {
+            debug!("{:?}", action);
+        }
     }
 
     pub fn scan_for_devices(&self) -> bool {
@@ -219,16 +225,19 @@ impl BpClient {
 
     pub fn dispatch_name(
         &mut self,
-        action_name: &str,
+        actions_name: Vec<String>,
         body_parts: Vec<String>,
         speed: Speed,
-        duration: Duration) -> i32 {
+        duration: Duration) 
+        -> i32 {
 
-        // TODO: return int
-        if let Some(action) = self.actions.clone().0.iter().find(|x| x.name == action_name) {
-            return self.dispatch( action, body_parts, speed, duration );
+        let mut handle = -1;
+        for action_name in actions_name {   
+            if let Some(action) = self.actions.clone().0.iter().find(|x| x.name == action_name) {
+                handle = self.dispatch( action, body_parts.clone(), speed, duration, handle );
+            }
         }
-        -1
+        handle
     }
 
     pub fn dispatch(
@@ -236,8 +245,9 @@ impl BpClient {
         action: &Action,
         body_parts: Vec<String>,
         speed: Speed,
-        duration: Duration) -> i32 {
-        let mut handle = -1;
+        duration: Duration,
+        existing_handle: i32) -> i32 {
+        let mut handle = existing_handle;
         for control in action.control.clone() {
             let filter_parts = match control.get_selector() {
                 Selector::All => body_parts.clone(),
@@ -262,7 +272,7 @@ impl BpClient {
         let actuators = self.status.connected_actuators();
         let actuator_types = control.get_actuators();
         let pattern_path = self.settings.pattern_path.clone();
-        let devices = TkParams::filter_devices(
+        let devices = TkParams::get_enabled_and_selected_devices(
             &actuators,
             &body_parts,
             &actuator_types,
@@ -427,7 +437,7 @@ mod tests {
                     )] 
             )
         ]);
-        tk.dispatch_name( "foobar", body_parts, speed, duration )
+        tk.dispatch_name( vec![ "foobar".into() ], body_parts, speed, duration )
     }
 
     #[test]

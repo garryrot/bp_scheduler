@@ -9,6 +9,7 @@ use crate::{devices::BpSettings, settings};
 
 use super::connection::TkConnectionType;
 
+// TODO weg
 pub static DEFAULT_PATTERN_PATH: &str = "Data\\SKSE\\Plugins\\Telekinesis\\Patterns";
 pub static DEFAULT_ACTION_PATH: &str = "Data\\SKSE\\Plugins\\Telekinesis\\Actions";
 pub static SETTINGS_PATH: &str = "Data\\SKSE\\Plugins";

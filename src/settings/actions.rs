@@ -1,7 +1,5 @@
 // actions/*.json
 
-use std::fs;
-
 use buttplug::core::message::ActuatorType;
 use serde::{Deserialize, Serialize};
 
@@ -87,34 +85,9 @@ impl From<ScalarActuators> for buttplug::core::message::ActuatorType {
     }
 }
 
-pub fn read_config(config_dir: String) -> Actions {
-    let mut results = vec![];
-    if let Ok(dir) = fs::read_dir(config_dir) {
-        for entry in dir.into_iter().flatten() {
-            if entry.path().is_file()
-                && entry
-                    .path()
-                    .extension()
-                    .and_then(|x| x.to_str())
-                    .map(|x| x.eq_ignore_ascii_case("json"))
-                    .unwrap_or(false)
-            {
-                if let Some(actions) = fs::read_to_string(entry.path())
-                    .ok()
-                    .and_then(|x| serde_json::from_str::<Actions>(&x).ok())
-                {
-                    results.append(&mut actions.0.clone());
-                }
-
-            }
-        }
-    }
-    Actions(results)
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::client::settings::settings_tests::*;
+    use crate::{client::settings::settings_tests::*, read::read_config};
 
     use super::*;
 
@@ -134,7 +107,7 @@ mod tests {
     #[test]
     pub fn build_mm_actions() {
         
-        let actions = Actions(vec![
+        let actions = vec![
             Action::build("milkmod.milkingstage", vec![
                 Control::Scalar(
                     Selector::BodyParts(vec!["nipple".into()]),
@@ -153,11 +126,6 @@ mod tests {
                         ScalarActuators::Oscillate
                     ],
                 ),
-                // Control::StrokePattern(
-                //     Selector::BodyParts(vec!["penis".into(), "vaginal".into()]),
-                //     Strength::Constant(100),
-                //     StrokeRange { min_ms: (), max_ms: (), min_pos: (), max_pos: () }
-                // ),
                 Control::Scalar(
                     Selector::BodyParts(vec!["inflate".into()]),
                     Strength::Constant(10),
@@ -166,7 +134,7 @@ mod tests {
                     ],
                 )
             ])
-        ]);
+        ];
         println!("{}", serde_json::to_string_pretty(&actions).unwrap());
     }
     
@@ -353,8 +321,8 @@ mod tests {
         let s2 = serde_json::to_string_pretty(&a2).unwrap();
         let (_, temp_dir, tmp_path) = create_temp_file("action1.json", &s1);
         add_temp_file("action2.json", &s2, &tmp_path);
-        let actions = read_config(temp_dir);
-        assert_eq!(actions.0.len(), 4);
+        let actions: Vec<Action>= read_config(temp_dir);
+        assert_eq!(actions.len(), 4);
         tmp_path.close().unwrap();
     }
 }
