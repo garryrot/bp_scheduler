@@ -5,7 +5,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tracing::{error, event, info, Level};
 
-use crate::{devices::BpSettings, settings};
+use crate::devices::BpSettings;
 
 use super::connection::TkConnectionType;
 

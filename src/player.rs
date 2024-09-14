@@ -13,7 +13,7 @@ use tracing::{debug, error, info, instrument, trace};
 use crate::{
     actuator::Actuator, 
     cancellable_wait, 
-    settings::linear::{
+    config::linear::{
         LinearRange, 
         LinearSpeedScaling
     }, 

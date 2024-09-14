@@ -36,7 +36,7 @@ use buttplug::{
 
 use client::input::*;
 use client::pattern::*;
-use settings::linear::*;
+use config::linear::*;
 use actions::*;
 
 #[cfg(feature = "testing")]
