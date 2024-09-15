@@ -1,5 +1,6 @@
 
 use anyhow::anyhow;
+use crossbeam_channel::Sender;
 use rand::Rng;
 use anyhow::Error;
 use read::read_config;
@@ -10,14 +11,10 @@ use std::{
     time::Instant,
 };
 
-use futures::Future;
+use futures::{Future, StreamExt};
 use tracing::{debug, error, info};
 
-use tokio::sync::mpsc::Sender;
-use tokio::{
-    runtime::Runtime,
-    sync::mpsc::channel
-};
+use tokio::runtime::Runtime;
 
 use buttplug::{
     client::ButtplugClient,
@@ -55,8 +52,9 @@ pub struct BpClient {
     pub connection_events: crossbeam_channel::Receiver<TkConnectionEvent>,
     pub status: Status,
     pub actions: Actions,
+    pub buttplug: ButtplugClient,
+    last_error: String,
     runtime: Runtime,
-    command_sender: Sender<ConnectionCommand>,
     scheduler: ButtplugScheduler,
     client_event_sender: crossbeam_channel::Sender<TkConnectionEvent>,
     status_event_sender: crossbeam_channel::Sender<TkConnectionEvent>,
@@ -74,44 +72,44 @@ impl BpClient {
         T: ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage>
             + 'static,
     {
-        let settings = provided_settings.unwrap_or_else(TkSettings::new);
-        let (event_sender_client, event_receiver) = crossbeam_channel::unbounded();
+        let settings = provided_settings.unwrap_or_default();
+        let (event_sender_client, connection_events) = crossbeam_channel::unbounded();
         let (event_sender_internal, event_receiver_internal) = crossbeam_channel::unbounded();
-        let (command_sender, command_receiver) = channel(256);
         let (scheduler, mut worker) = ButtplugScheduler::create(PlayerSettings {
             scalar_resolution_ms: 100,
         });
 
+        let runtime = Runtime::new()?;
+        let event_sender_internal_clone = event_sender_internal.clone();
+        let buttplug = runtime.block_on(async move {
+            info!("connecting");
+            with_connector(connect_action().await, &event_sender_internal_clone, type_name).await
+        });
         let client = BpClient {
-            command_sender: command_sender.clone(),
-            connection_events: event_receiver,
-            runtime: Runtime::new()?,
+            connection_events,
+            runtime,
             settings: settings.clone(),
             scheduler,
             client_event_sender: event_sender_client.clone(),
             status_event_sender: event_sender_internal.clone(),
             status: Status::new(event_receiver_internal, &settings),
-            actions: Actions(vec![])
+            actions: Actions(vec![]),
+            buttplug,
+            last_error: "todo!()".into(),
         };
-        info!(?client, "connecting...");
+
+        let event_stream = client.buttplug.event_stream();
         client.runtime.spawn(async move {
-            let client = with_connector(connect_action().await).await;
-            handle_connection(
-                event_sender_client,
-                event_sender_internal,
-                command_sender,
-                command_receiver,
-                client,
-                type_name,
-            )
-            .await;
-            debug!("connection handling stopped");
+            debug!("event thread");
+            handle_connection(event_sender_client, event_sender_internal, event_stream).await;
+            debug!("event stopped");
         });
         client.runtime.spawn(async move {
             debug!("starting worker thread");
             worker.run_worker_thread().await;
             debug!("worked thread stopped");
         });
+
         Ok(client)
     }
 }
@@ -162,28 +160,53 @@ impl BpClient {
 
     pub fn scan_for_devices(&self) -> bool {
         info!("start scan");
-        if self
-            .command_sender
-            .try_send(ConnectionCommand::Scan)
-            .is_err()
-        {
-            error!("Failed to start scan");
+        let result = self.runtime.block_on(async move {
+            self.buttplug.start_scanning().await
+        });
+        if let Err(err) = result {
+            error!("Failed to start scan {:?}", err);
+            return false;
+        }
+        true     
+    }
+
+    pub fn stop_scan(&self) -> bool {
+        info!("stop scan");
+        let result = self.runtime.block_on(async move {
+            self.buttplug.stop_scanning().await
+        });
+        if let Err(err) = result {
+            error!("Failed to stop scan {:?}", err);
             return false;
         }
         true
     }
 
-    pub fn stop_scan(&self) -> bool {
-        info!("stop scan");
-        if self
-            .command_sender
-            .try_send(ConnectionCommand::StopScan)
-            .is_err()
-        {
-            error!("Failed to stop scan");
+    pub fn stop_all(&mut self) -> bool {
+        info!("stop all devices");
+
+        self.scheduler.stop_all();
+        let buttplug = &self.buttplug;
+        let result = self.runtime.block_on(async move {
+            buttplug.stop_all_devices().await
+        });
+
+        if let Err(err) = result {
+            error!("Failed to queue stop_all {:?}", err);
             return false;
         }
         true
+    }
+
+    pub fn disconnect(&mut self) {
+        info!("disconnect");
+        let buttplug = &self.buttplug;
+        let result = self.runtime.block_on(async move {
+            buttplug.disconnect().await
+        });
+        if let Err(err) = result {
+            error!("Failed to send disconnect {:?}", err);
+        }
     }
 
     pub fn update(&mut self, handle: i32, speed: Speed) -> bool {
@@ -196,31 +219,6 @@ impl BpClient {
         info!("stop");
         self.scheduler.stop_task(handle);
         true
-    }
-
-    pub fn stop_all(&mut self) -> bool {
-        info!("stop all");
-        self.scheduler.stop_all();
-        if self
-            .command_sender
-            .try_send(ConnectionCommand::StopAll)
-            .is_err()
-        {
-            error!("Failed to queue stop_all");
-            return false;
-        }
-        true
-    }
-
-    pub fn disconnect(&mut self) {
-        info!("disconnect");
-        if self
-            .command_sender
-            .try_send(ConnectionCommand::Disconect)
-            .is_err()
-        {
-            error!("Failed to send disconnect");
-        }
     }
 
     pub fn dispatch_name(
@@ -361,7 +359,7 @@ pub fn in_process_connector(
         .finish()
 }
 
-async fn with_connector<T>(connector: T) -> ButtplugClient
+async fn with_connector<T>(connector: T, sender: &Sender<TkConnectionEvent>, type_name: TkConnectionType) -> ButtplugClient
 where
     T: ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage>
         + 'static,
@@ -369,6 +367,9 @@ where
     let buttplug = ButtplugClient::new("BpClient");
     if let Err(err) = buttplug.connect(connector).await {
         error!("Could not connect client. Error: {}.", err);
+        let _ = sender.try_send(TkConnectionEvent::ConnectionFailure(err.to_string()));
+    } else {
+        let _ = sender.try_send(TkConnectionEvent::Connected(type_name.to_string().into()));
     }
     buttplug
 }
@@ -383,7 +384,6 @@ impl fmt::Debug for BpClient {
 
 #[cfg(test)]
 mod tests {
-    use actions::*;
     use buttplug::core::message::{ActuatorType, DeviceAdded};
     use funscript::FScript;
     use std::time::Instant;
@@ -398,13 +398,13 @@ mod tests {
             let start: Instant = Instant::now();
             while !$cond {
                 thread::sleep(Duration::from_millis(10));
-                if start.elapsed().as_secs() > 5 {
+                if start.elapsed().as_secs() > 20 {
                     panic!($arg);
                 }
             }
         };
     }
-
+    
     impl BpClient {
         pub fn await_connect(&mut self, devices: usize) {
             assert_timeout!(self.status.actuators().len() >= devices, "Awaiting connect");

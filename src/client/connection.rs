@@ -5,14 +5,14 @@ use std::{
 };
 
 use buttplug::{
-    client::{ButtplugClient, ButtplugClientDevice, ButtplugClientEvent},
+    client::{ButtplugClientDevice, ButtplugClientEvent},
     core::message::ActuatorType,
 };
 use crossbeam_channel::Sender;
+use futures::Stream;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use tokio::runtime::Handle;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::{actions::Action, actuator::{get_actuators, Actuator}, speed::Speed};
 
@@ -69,83 +69,10 @@ impl Display for TkConnectionType {
 pub async fn handle_connection(
     event_sender: crossbeam_channel::Sender<TkConnectionEvent>,
     event_sender_internal: crossbeam_channel::Sender<TkConnectionEvent>,
-    command_sender: tokio::sync::mpsc::Sender<ConnectionCommand>, // TODO: just use crossbeam?
-    mut command_receiver: tokio::sync::mpsc::Receiver<ConnectionCommand>,
-    client: ButtplugClient,
-    connection_type: TkConnectionType,
+    mut event_stream: impl Stream<Item = ButtplugClientEvent> + std::marker::Unpin
 ) {
-    let sender_interla_clone = event_sender_internal.clone();
-    let mut buttplug_events = client.event_stream();
-    let sender_clone = event_sender.clone();
-    let try_send_events = move |event: TkConnectionEvent| {
-        try_send_event(&sender_clone, event.clone());
-        try_send_event(&event_sender_internal, event);
-    };
-
-    // TODO: This can probably send events directly
-    Handle::current().spawn(async move {
-        debug!("starting connection thread...");
-        loop {
-            let next_cmd = command_receiver.recv().await;
-            if let Some(cmd) = next_cmd {
-                debug!("Executing command {:?}", cmd);
-                match cmd {
-                    ConnectionCommand::Scan => {
-                        if let Err(err) = client.start_scanning().await {
-                            let error = err.to_string();
-                            error!("connection failure {}", error);
-                            try_send_events(TkConnectionEvent::ConnectionFailure(err.to_string()));
-                        } else {
-                            let settings = connection_type.to_string();
-                            info!(settings, "connection success");
-                            try_send_events(TkConnectionEvent::Connected(settings.clone()));
-                        }
-                    }
-                    ConnectionCommand::StopScan => {
-                        if let Err(err) = client.stop_scanning().await {
-                            let error = err.to_string();
-                            error!(error, "failed stop scan");
-                            let err = TkConnectionEvent::ConnectionFailure(error);
-                            try_send_events(err);
-                        }
-                    }
-                    ConnectionCommand::Disconect => {
-                        client
-                            .disconnect()
-                            .await
-                            .unwrap_or_else(|_| error!("failed to disconnect"));
-                        break;
-                    }
-                    ConnectionCommand::StopAll => {
-                        client
-                            .stop_all_devices()
-                            .await
-                            .unwrap_or_else(|_| error!("failed to stop all devices"));
-                    }
-                    ConnectionCommand::GetBattery => {
-                        for device in client.devices() {
-                            if device.connected() && device.has_battery_level() {
-                                try_send_events(TkConnectionEvent::BatteryLevel(device.clone(),device.battery_level().await.ok()));
-                            }
-                        }
-                    },
-                }
-            } else {
-                break;
-            }
-        }
-        info!("stream closed");
-    });
-
-    Handle::current().spawn(async move {
-        debug!("starting battery thread");
-        loop {
-            tokio::time::sleep(Duration::from_secs(300)).await;
-            let _ = command_sender.send(ConnectionCommand::GetBattery).await;
-        }
-    });
-
-    while let Some(event) = buttplug_events.next().await {
+    let sender_interla_clone: Sender<TkConnectionEvent> = event_sender_internal.clone();
+    while let Some(event) = event_stream.next().await {
         match event.clone() {
             ButtplugClientEvent::DeviceAdded(device) => {
                 let name = device.name();
@@ -177,6 +104,37 @@ pub async fn handle_connection(
         };
     }
 }
+
+    // TODO: This can probably send events directly
+    // Handle::current().spawn(async move {
+    //     debug!("starting connection thread...");
+    //     loop {
+    //         let next_cmd = command_receiver.recv().await;
+    //         if let Some(cmd) = next_cmd {
+    //             debug!("Executing command {:?}", cmd);
+    //             match cmd {
+    //                 ConnectionCommand::GetBattery => {
+    //                     for device in client.devices() {
+    //                         if device.connected() && device.has_battery_level() {
+    //                             try_send_events(TkConnectionEvent::BatteryLevel(device.clone(),device.battery_level().await.ok()));
+    //                         }
+    //                     }
+    //                 },
+    //             }
+    //         } else {
+    //             break;
+    //         }
+    //     }
+    //     info!("stream closed");
+    // });
+
+    // Handle::current().spawn(async move {
+    //     debug!("starting battery thread");
+    //     loop {
+    //         tokio::time::sleep(Duration::from_secs(300)).await;
+    //         let _ = command_sender.send(ConnectionCommand::GetBattery).await;
+    //     }
+    // });
 
 fn try_send_event(sender: &Sender<TkConnectionEvent>, evt: TkConnectionEvent) {
     sender
