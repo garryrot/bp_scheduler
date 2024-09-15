@@ -1,6 +1,6 @@
 
 use anyhow::anyhow;
-use crossbeam_channel::Sender;
+use buttplug::client::ButtplugClientError;
 use rand::Rng;
 use anyhow::Error;
 use read::read_config;
@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-use futures::{Future, StreamExt};
+use futures::Future;
 use tracing::{debug, error, info};
 
 use tokio::runtime::Runtime;
@@ -53,7 +53,7 @@ pub struct BpClient {
     pub status: Status,
     pub actions: Actions,
     pub buttplug: ButtplugClient,
-    last_error: String,
+    connection_result: Result<(), ButtplugClientError>,
     runtime: Runtime,
     scheduler: ButtplugScheduler,
     client_event_sender: crossbeam_channel::Sender<TkConnectionEvent>,
@@ -80,11 +80,15 @@ impl BpClient {
         });
 
         let runtime = Runtime::new()?;
-        let event_sender_internal_clone = event_sender_internal.clone();
-        let buttplug = runtime.block_on(async move {
+        let (buttplug, connection_result) = runtime.block_on(async move {
             info!("connecting");
-            with_connector(connect_action().await, &event_sender_internal_clone, type_name).await
+            let buttplug = ButtplugClient::new("BpClient");
+            let result = buttplug.connect(connect_action().await).await;
+            (buttplug, result)
         });
+        if let Err(err) = connection_result.as_ref() {
+            error!("connection error: {:?}", err)
+        }
         let client = BpClient {
             connection_events,
             runtime,
@@ -95,9 +99,8 @@ impl BpClient {
             status: Status::new(event_receiver_internal, &settings),
             actions: Actions(vec![]),
             buttplug,
-            last_error: "todo!()".into(),
+            connection_result
         };
-
         let event_stream = client.buttplug.event_stream();
         client.runtime.spawn(async move {
             debug!("event thread");
@@ -359,21 +362,6 @@ pub fn in_process_connector(
         .finish()
 }
 
-async fn with_connector<T>(connector: T, sender: &Sender<TkConnectionEvent>, type_name: TkConnectionType) -> ButtplugClient
-where
-    T: ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage>
-        + 'static,
-{
-    let buttplug = ButtplugClient::new("BpClient");
-    if let Err(err) = buttplug.connect(connector).await {
-        error!("Could not connect client. Error: {}.", err);
-        let _ = sender.try_send(TkConnectionEvent::ConnectionFailure(err.to_string()));
-    } else {
-        let _ = sender.try_send(TkConnectionEvent::Connected(type_name.to_string().into()));
-    }
-    buttplug
-}
-
 impl fmt::Debug for BpClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BpClient")
@@ -629,11 +617,7 @@ mod tests {
         tk.scan_for_devices();
 
         thread::sleep(Duration::from_secs(5));
-        assert!(matches!(
-            tk.status.connection_status(),
-            TkConnectionStatus::Connected
-        ));
-
+        assert!(tk.connection_result.is_ok());
         for actuator in tk.status.actuators() {
             tk.settings
                 .device_settings
@@ -654,15 +638,12 @@ mod tests {
     fn intiface_not_available_connection_status_error() {
         let mut settings = TkSettings::new();
         settings.connection = TkConnectionType::WebSocket(String::from("bogushost:6572"));
-
         let mut tk = BpClient::connect(settings).unwrap();
         tk.scan_for_devices();
         thread::sleep(Duration::from_secs(5));
-        match tk.status.connection_status() {
-            TkConnectionStatus::Failed(err) => {
-                assert!(!err.is_empty());
-            }
-            _ => todo!(),
+        match tk.connection_result {
+            Ok(_) => panic!("should not be ok"),
+            Err(err) => {}
         };
     }
 

@@ -29,7 +29,6 @@ pub enum TkConnectionStatus {
 
 pub struct Status {
     status_events: Receiver<TkConnectionEvent>,
-    connection: TkConnectionStatus,
     actuators: Vec<ActuatorStatus>,
     known_actuators: Vec<String>
 }
@@ -38,7 +37,6 @@ impl Status {
     pub fn new(receiver: Receiver<TkConnectionEvent>, settings: &TkSettings) -> Self {
         Status {
             status_events: receiver,
-            connection: TkConnectionStatus::NotConnected,
             actuators: vec![],
             known_actuators: settings
                 .device_settings
@@ -47,11 +45,6 @@ impl Status {
                 .map(|x| x.actuator_id.clone())
                 .collect(),
         }
-    }
-
-    pub fn connection_status(&mut self) -> TkConnectionStatus {
-        self.process_status_events();
-        self.connection.clone()
     }
 
     pub fn actuators(&mut self) -> Vec<Arc<Actuator>> {
@@ -108,10 +101,6 @@ impl Status {
         while let Ok(evt) = self.status_events.try_recv() {
             debug!("processing status event {:?}", evt);
             match evt {
-                TkConnectionEvent::Connected(_) => self.connection = TkConnectionStatus::Connected,
-                TkConnectionEvent::ConnectionFailure(err) => {
-                    self.connection = TkConnectionStatus::Failed(err)
-                }
                 TkConnectionEvent::DeviceAdded(device, battery_level) => {
                     self.set_status(device.clone(), TkConnectionStatus::Connected, battery_level);
                 }

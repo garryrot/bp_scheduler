@@ -39,8 +39,6 @@ pub enum Task {
 
 #[derive(Clone, Debug)]
 pub enum TkConnectionEvent {
-    Connected(String),
-    ConnectionFailure(String),
     DeviceAdded(Arc<ButtplugClientDevice>, Option<f64>),
     DeviceRemoved(Arc<ButtplugClientDevice>),
     BatteryLevel(Arc<ButtplugClientDevice>, Option<f64>),
