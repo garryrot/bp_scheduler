@@ -834,10 +834,11 @@ mod tests {
         .unwrap();
         tk.await_connect(count);
 
-        for actuator in tk.buttplug.devices() {
+        let actuators = get_actuators(tk.buttplug.devices());
+        for actuator in actuators {
             tk.settings
                 .device_settings
-                .set_enabled(actuator.name(), true);
+                .set_enabled(actuator.identifier(), true);
         }
         (tk, call_registry)
     }
