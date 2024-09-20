@@ -1,6 +1,6 @@
 
 use anyhow::anyhow;
-use buttplug::client::ButtplugClientError;
+use buttplug::client::{ButtplugClientDevice, ButtplugClientError};
 use rand::Rng;
 use anyhow::Error;
 use read::read_config;
@@ -11,7 +11,7 @@ use std::{
     time::Instant,
 };
 
-use futures::Future;
+use futures::{Future, StreamExt};
 use tracing::{debug, error, info};
 
 use tokio::runtime::Runtime;
@@ -49,12 +49,12 @@ pub static ERROR_HANDLE: i32 = -1;
 
 pub struct BpClient {
     pub settings: TkSettings,
-    pub connection_events: crossbeam_channel::Receiver<TkConnectionEvent>,
     pub status: Status,
     pub actions: Actions,
     pub buttplug: ButtplugClient,
+    pub runtime: Runtime,
+    pub connection_events: crossbeam_channel::Receiver<TkConnectionEvent>,
     connection_result: Result<(), ButtplugClientError>,
-    runtime: Runtime,
     scheduler: ButtplugScheduler,
     client_event_sender: crossbeam_channel::Sender<TkConnectionEvent>,
     status_event_sender: crossbeam_channel::Sender<TkConnectionEvent>,
@@ -101,10 +101,15 @@ impl BpClient {
             buttplug,
             connection_result
         };
-        let event_stream = client.buttplug.event_stream();
+        let mut event_stream = client.buttplug.event_stream();
         client.runtime.spawn(async move {
             debug!("event thread");
-            handle_connection(event_sender_client, event_sender_internal, event_stream).await;
+
+            // while let Some(evt) = event_stream.next().await {
+                
+            // }
+
+            // handle_connection(event_sender_client, event_sender_internal, event_stream).await;
             debug!("event stopped");
         });
         client.runtime.spawn(async move {
@@ -112,7 +117,6 @@ impl BpClient {
             worker.run_worker_thread().await;
             debug!("worked thread stopped");
         });
-
         Ok(client)
     }
 }
@@ -266,11 +270,12 @@ impl BpClient {
         body_parts: Vec<String>,
         speed: Speed,
         duration: Duration,
-        handle: i32
+        handle: i32  
     ) -> i32 {
         self.scheduler.clean_finished_tasks();
         let action_clone = action.clone();
-        let actuators = self.status.connected_actuators();
+        let connected_devices : Vec<Arc<ButtplugClientDevice>> = self.buttplug.devices().iter().filter(|x| x.connected()).cloned().collect();
+        let actuators = get_actuators( connected_devices );
         let actuator_types = control.get_actuators();
         let pattern_path = self.settings.pattern_path.clone();
         let devices = TkParams::get_enabled_and_selected_devices(
@@ -350,8 +355,7 @@ impl BpClient {
     }
 }
 
-pub fn in_process_connector(
-) -> impl ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage> {
+pub fn in_process_connector() -> impl ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage> {
     ButtplugInProcessClientConnectorBuilder::default()
         .server(
             ButtplugServerBuilder::default()
@@ -395,7 +399,7 @@ mod tests {
     
     impl BpClient {
         pub fn await_connect(&mut self, devices: usize) {
-            assert_timeout!(self.status.actuators().len() >= devices, "Awaiting connect");
+            assert_timeout!(self.buttplug.devices().len() >= devices, "Awaiting connect");
         }
     }
 
@@ -486,7 +490,7 @@ mod tests {
             BpClient::connect_with(|| async move { connector }, None, TkConnectionType::Test)
                 .unwrap();
         tk.await_connect(count);
-        for actuator_id in tk.status.get_known_actuator_ids() {
+        for actuator_id in tk.status.get_known_actuator_ids(tk.buttplug.devices()) {
             tk.settings.device_settings.set_enabled(&actuator_id, true);
         }
         test_cmd(
@@ -588,7 +592,7 @@ mod tests {
         tk.scan_for_devices();
         tk.await_connect(1);
         thread::sleep(Duration::from_secs(2));
-        let known_actuator_ids = tk.status.get_known_actuator_ids();
+        let known_actuator_ids = tk.status.get_known_actuator_ids(tk.buttplug.devices());
         tk.settings
             .device_settings
             .set_enabled(known_actuator_ids.first().unwrap(), true);
@@ -618,7 +622,7 @@ mod tests {
 
         thread::sleep(Duration::from_secs(5));
         assert!(tk.connection_result.is_ok());
-        for actuator in tk.status.actuators() {
+        for actuator in get_actuators(tk.buttplug.devices()) {
             tk.settings
                 .device_settings
                 .set_enabled(actuator.device.name(), true);
@@ -643,7 +647,7 @@ mod tests {
         thread::sleep(Duration::from_secs(5));
         match tk.connection_result {
             Ok(_) => panic!("should not be ok"),
-            Err(err) => {}
+            Err(_) => {}
         };
     }
 
@@ -685,16 +689,16 @@ mod tests {
         );
 
         // assert
-        assert_timeout!(tk.status.actuators().len() == 2, "Enough devices connected");
+        assert_timeout!(tk.buttplug.devices().len() == 2, "Enough devices connected");
         assert!(
             tk.status
-                .get_known_actuator_ids()
+                .get_known_actuator_ids(tk.buttplug.devices())
                 .contains(&String::from("vib1 (Vibrate)")),
             "Contains name vib1"
         );
         assert!(
             tk.status
-                .get_known_actuator_ids()
+                .get_known_actuator_ids(tk.buttplug.devices())
                 .contains(&String::from("vib2 (Inflate)")),
             "Contains name vib2"
         );
@@ -708,7 +712,7 @@ mod tests {
         let (mut tk, _) = wait_for_connection(vec![], Some(settings));
         assert!(
             tk.status
-                .get_known_actuator_ids()
+                .get_known_actuator_ids(tk.buttplug.devices())
                 .contains(&String::from("foreign")),
             "Contains additional device from settings"
         );
@@ -793,23 +797,24 @@ mod tests {
     }
 
     /// Device Status
-    #[test]
-    fn get_device_connected() {
-        let (mut tk, _) =
-            wait_for_connection(vec![scalar(1, "existing", ActuatorType::Vibrate)], None);
-        assert_eq!(
-            tk.status
-                .get_actuator_connection_status("existing (Vibrate)"),
-            TkConnectionStatus::Connected,
-            "Existing device returns connected"
-        );
-        assert_eq!(
-            tk.status
-                .get_actuator_connection_status("not existing (Vibrate)"),
-            TkConnectionStatus::NotConnected,
-            "Non-existing device returns not connected"
-        );
-    }
+    // #[test]
+    // fn get_device_connected() {
+    //     let (mut tk, _) =
+    //         wait_for_connection(vec![scalar(1, "existing", ActuatorType::Vibrate)], None);
+    //     assert!(
+
+    //         tk.status.get_actuator("existing (Vibrate)", tk.buttplug.devices()).unwrap().device.connected(),
+    //         "Existing device returns connected"
+    //     );
+    //     assert_eq!(
+
+    //         tk.status.get_actuator("existing (Vibrate)", tk.buttplug.devices()).unwrap().device.connected(),
+    //         tk.status.get_actuator("actuator_id", devices)
+    //             .get_actuator_connection_status("not existing (Vibrate)"),
+    //         TkConnectionStatus::NotConnected,
+    //         "Non-existing device returns not connected"
+    //     );
+    // }
 
     fn wait_for_connection(
         devices: Vec<DeviceAdded>,
@@ -829,10 +834,10 @@ mod tests {
         .unwrap();
         tk.await_connect(count);
 
-        for actuator in tk.status.actuators() {
+        for actuator in tk.buttplug.devices() {
             tk.settings
                 .device_settings
-                .set_enabled(actuator.identifier(), true);
+                .set_enabled(actuator.name(), true);
         }
         (tk, call_registry)
     }

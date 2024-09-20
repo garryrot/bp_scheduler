@@ -6,9 +6,9 @@ use crossbeam_channel::Receiver;
 use itertools::Itertools;
 use tracing::debug;
 
-use buttplug::client::ButtplugClientDevice;
+use buttplug::{client::ButtplugClientDevice, core::message::ActuatorType};
 
-use crate::actuator::{get_actuators, Actuator};
+use crate::actuator::Actuator;
 
 use super::{connection::TkConnectionEvent, settings::TkSettings};
 
@@ -16,8 +16,7 @@ use super::{connection::TkConnectionEvent, settings::TkSettings};
 #[derive(Clone, Debug)]
 pub struct ActuatorStatus {
     pub actuator: Arc<Actuator>,
-    pub connection_status: TkConnectionStatus,
-    pub battery_level: Option<f64>
+    pub connection_status: TkConnectionStatus
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +28,6 @@ pub enum TkConnectionStatus {
 
 pub struct Status {
     status_events: Receiver<TkConnectionEvent>,
-    actuators: Vec<ActuatorStatus>,
     known_actuators: Vec<String>
 }
 
@@ -37,7 +35,6 @@ impl Status {
     pub fn new(receiver: Receiver<TkConnectionEvent>, settings: &TkSettings) -> Self {
         Status {
             status_events: receiver,
-            actuators: vec![],
             known_actuators: settings
                 .device_settings
                 .devices
@@ -47,94 +44,22 @@ impl Status {
         }
     }
 
-    pub fn actuators(&mut self) -> Vec<Arc<Actuator>> {
-        self.process_status_events();
-        self.actuators.iter().map(|x| x.actuator.clone()).collect()
-    }
 
-    pub fn connected_actuators(&mut self) -> Vec<Arc<Actuator>> {
-        self.process_status_events();
-        self.actuators
-            .iter()
-            .filter(|x| x.connection_status != TkConnectionStatus::NotConnected)
-            .map(|x| x.actuator.clone())
-            .collect()
-    }
-
-    pub fn actuator_status(&mut self) -> &Vec<ActuatorStatus> {
-        self.process_status_events();
-        &self.actuators
-    }
-
-    pub fn get_actuator(&mut self, actuator_id: &str) -> Option<Arc<Actuator>> {
-        self.actuators()
+    pub fn get_actuator(&mut self, actuator_id: &str, devices: Vec<Arc<ButtplugClientDevice>>) -> Option<Arc<Actuator>> {
+        get_actuators(devices)
             .iter()
             .find(|x| x.identifier() == actuator_id)
             .cloned()
     }
 
-    pub fn get_actuator_connection_status(&mut self, actuator_id: &str) -> TkConnectionStatus {
-        if let Some(status) = self.get_actuator_status(actuator_id) {
-            return status.connection_status.clone();
-        }
-        TkConnectionStatus::NotConnected
-    }
-
-    pub fn get_actuator_status(&mut self, actuator_id: &str) -> Option<&ActuatorStatus> {
-        self.process_status_events();
-        self.actuator_status()
-            .iter()
-            .find(|x| x.actuator.identifier() == actuator_id)
-    }
-
-    pub fn get_known_actuator_ids(&mut self) -> Vec<String> {
+    pub fn get_known_actuator_ids(&mut self, devices: Vec<Arc<ButtplugClientDevice>>) -> Vec<String> {
         let known_ids = self.known_actuators.clone();
-        self.actuators()
+        get_actuators(devices)
             .iter()
             .map(|x| String::from(x.identifier()))
             .chain(known_ids)
             .unique()
             .collect()
-    }
-
-    pub fn process_status_events(&mut self) {
-        while let Ok(evt) = self.status_events.try_recv() {
-            debug!("processing status event {:?}", evt);
-            match evt {
-                TkConnectionEvent::DeviceAdded(device, battery_level) => {
-                    self.set_status(device.clone(), TkConnectionStatus::Connected, battery_level);
-                }
-                TkConnectionEvent::BatteryLevel(device, battery_level) => {
-                    self.set_status(device.clone(), TkConnectionStatus::Connected, battery_level);
-                }
-                TkConnectionEvent::DeviceRemoved(device) => {
-                    self.set_status(device.clone(), TkConnectionStatus::NotConnected, None);
-                }
-                TkConnectionEvent::ActionError(actuator, err) => {
-                    self.set_status(actuator.device.clone(), TkConnectionStatus::Failed(err), None);
-                }
-                TkConnectionEvent::ActionStarted(_, _, _, _) => {}
-                TkConnectionEvent::ActionDone(_, _, _) => {}
-            };
-        }
-    }
-
-    fn set_status(&mut self, device: Arc<ButtplugClientDevice>, connection_status: TkConnectionStatus, battery_level: Option<f64>) {
-        let new_actuators = get_actuators(vec![device.clone()])
-            .into_iter()
-            .map(|actuator| ActuatorStatus { 
-                actuator, 
-                connection_status: connection_status.clone(), 
-                battery_level
-            });
-        self.actuators = self
-            .actuators
-            .clone()
-            .into_iter()
-            .filter(|x| x.actuator.device.index() != device.index())
-            .chain(new_actuators)
-            .collect();
-        debug!("device status updated: {:?}", self.actuators)
     }
 }
 
@@ -146,4 +71,26 @@ impl Display for TkConnectionStatus {
             TkConnectionStatus::Connected => write!(f, "Connected"),
         }
     }
+}
+
+pub fn get_actuators(devices: Vec<Arc<ButtplugClientDevice>>) -> Vec<Arc<Actuator>> {
+    let mut actuators = vec![];
+    for device in devices {
+        if let Some(scalar_cmd) = device.message_attributes().scalar_cmd() {
+            for (idx, scalar_cmd) in scalar_cmd.iter().enumerate() {
+                actuators.push(Actuator::new(&device, *scalar_cmd.actuator_type(), idx))
+            }
+        }
+        if let Some(linear_cmd) = device.message_attributes().linear_cmd() {
+            for (idx, _) in linear_cmd.iter().enumerate() {
+                actuators.push(Actuator::new(&device, ActuatorType::Position, idx));
+            }
+        }
+        if let Some(rotate_cmd) = device.message_attributes().rotate_cmd() {
+            for (idx, _) in rotate_cmd.iter().enumerate() {
+                actuators.push(Actuator::new(&device, ActuatorType::Rotate, idx))
+            }
+        }
+    }
+    actuators.into_iter().map(Arc::new).collect()
 }

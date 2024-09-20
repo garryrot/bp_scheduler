@@ -44,28 +44,6 @@ impl Actuator {
     }
 }
 
-pub fn get_actuators(devices: Vec<Arc<ButtplugClientDevice>>) -> Vec<Arc<Actuator>> {
-    let mut actuators = vec![];
-    for device in devices {
-        if let Some(scalar_cmd) = device.message_attributes().scalar_cmd() {
-            for (idx, scalar_cmd) in scalar_cmd.iter().enumerate() {
-                actuators.push(Actuator::new(&device, *scalar_cmd.actuator_type(), idx))
-            }
-        }
-        if let Some(linear_cmd) = device.message_attributes().linear_cmd() {
-            for (idx, _) in linear_cmd.iter().enumerate() {
-                actuators.push(Actuator::new(&device, ActuatorType::Position, idx));
-            }
-        }
-        if let Some(rotate_cmd) = device.message_attributes().rotate_cmd() {
-            for (idx, _) in rotate_cmd.iter().enumerate() {
-                actuators.push(Actuator::new(&device, ActuatorType::Rotate, idx))
-            }
-        }
-    }
-    actuators.into_iter().map(Arc::new).collect()
-}
-
 impl Display for Actuator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.identifier)

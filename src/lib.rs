@@ -185,7 +185,7 @@ mod tests {
     use tokio::task::JoinHandle;
     use tokio::time::timeout;
 
-    use crate::actuator::get_actuators;
+    use crate::client::status::get_actuators;
     use crate::player::PatternPlayer;
     use crate::config::*;
     use crate::config::linear::*;
