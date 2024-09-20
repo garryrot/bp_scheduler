@@ -49,7 +49,6 @@ pub static ERROR_HANDLE: i32 = -1;
 
 pub struct BpClient {
     pub settings: TkSettings,
-    pub status: Status,
     pub actions: Actions,
     pub buttplug: ButtplugClient,
     pub runtime: Runtime,
@@ -96,7 +95,6 @@ impl BpClient {
             scheduler,
             client_event_sender: event_sender_client.clone(),
             status_event_sender: event_sender_internal.clone(),
-            status: Status::new(event_receiver_internal, &settings),
             actions: Actions(vec![]),
             buttplug,
             connection_result
@@ -490,7 +488,7 @@ mod tests {
             BpClient::connect_with(|| async move { connector }, None, TkConnectionType::Test)
                 .unwrap();
         tk.await_connect(count);
-        for actuator_id in tk.status.get_known_actuator_ids(tk.buttplug.devices()) {
+        for actuator_id in get_known_actuator_ids(tk.buttplug.devices(), &tk.settings) {
             tk.settings.device_settings.set_enabled(&actuator_id, true);
         }
         test_cmd(
@@ -592,7 +590,7 @@ mod tests {
         tk.scan_for_devices();
         tk.await_connect(1);
         thread::sleep(Duration::from_secs(2));
-        let known_actuator_ids = tk.status.get_known_actuator_ids(tk.buttplug.devices());
+        let known_actuator_ids = get_known_actuator_ids(tk.buttplug.devices(), &tk.settings);
         tk.settings
             .device_settings
             .set_enabled(known_actuator_ids.first().unwrap(), true);
@@ -691,14 +689,12 @@ mod tests {
         // assert
         assert_timeout!(tk.buttplug.devices().len() == 2, "Enough devices connected");
         assert!(
-            tk.status
-                .get_known_actuator_ids(tk.buttplug.devices())
+            get_known_actuator_ids(tk.buttplug.devices(), &tk.settings)
                 .contains(&String::from("vib1 (Vibrate)")),
             "Contains name vib1"
         );
         assert!(
-            tk.status
-                .get_known_actuator_ids(tk.buttplug.devices())
+            get_known_actuator_ids(tk.buttplug.devices(), &tk.settings)
                 .contains(&String::from("vib2 (Inflate)")),
             "Contains name vib2"
         );
@@ -711,8 +707,7 @@ mod tests {
 
         let (mut tk, _) = wait_for_connection(vec![], Some(settings));
         assert!(
-            tk.status
-                .get_known_actuator_ids(tk.buttplug.devices())
+                 get_known_actuator_ids(tk.buttplug.devices(), &tk.settings)
                 .contains(&String::from("foreign")),
             "Contains additional device from settings"
         );

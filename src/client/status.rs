@@ -1,76 +1,27 @@
-use std::{
-    fmt::{self, Display},
-    sync::Arc,
-};
-use crossbeam_channel::Receiver;
+use std::sync::Arc;
 use itertools::Itertools;
-use tracing::debug;
 
 use buttplug::{client::ButtplugClientDevice, core::message::ActuatorType};
 
 use crate::actuator::Actuator;
 
-use super::{connection::TkConnectionEvent, settings::TkSettings};
+use super::settings::TkSettings;
 
-/// Its actually device status but this makes it easier to housekeep
-#[derive(Clone, Debug)]
-pub struct ActuatorStatus {
-    pub actuator: Arc<Actuator>,
-    pub connection_status: TkConnectionStatus
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TkConnectionStatus {
-    NotConnected,
-    Connected,
-    Failed(String),
-}
-
-pub struct Status {
-    status_events: Receiver<TkConnectionEvent>,
-    known_actuators: Vec<String>
-}
-
-impl Status {
-    pub fn new(receiver: Receiver<TkConnectionEvent>, settings: &TkSettings) -> Self {
-        Status {
-            status_events: receiver,
-            known_actuators: settings
-                .device_settings
-                .devices
-                .iter()
-                .map(|x| x.actuator_id.clone())
-                .collect(),
-        }
-    }
-
-
-    pub fn get_actuator(&mut self, actuator_id: &str, devices: Vec<Arc<ButtplugClientDevice>>) -> Option<Arc<Actuator>> {
-        get_actuators(devices)
+pub fn get_known_actuator_ids(devices: Vec<Arc<ButtplugClientDevice>>, settings: &TkSettings) -> Vec<String> {
+    let known_actuators : Vec<String> = settings
+            .device_settings
+            .devices
             .iter()
-            .find(|x| x.identifier() == actuator_id)
-            .cloned()
-    }
+            .map(|x| x.actuator_id.clone())
+            .collect();
 
-    pub fn get_known_actuator_ids(&mut self, devices: Vec<Arc<ButtplugClientDevice>>) -> Vec<String> {
-        let known_ids = self.known_actuators.clone();
-        get_actuators(devices)
-            .iter()
-            .map(|x| String::from(x.identifier()))
-            .chain(known_ids)
-            .unique()
-            .collect()
-    }
-}
-
-impl Display for TkConnectionStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self {
-            TkConnectionStatus::Failed(err) => write!(f, "{}", err),
-            TkConnectionStatus::NotConnected => write!(f, "Not Connected"),
-            TkConnectionStatus::Connected => write!(f, "Connected"),
-        }
-    }
+    let known_ids = known_actuators.clone();
+    get_actuators(devices)
+        .iter()
+        .map(|x| String::from(x.identifier()))
+        .chain(known_ids)
+        .unique()
+        .collect()
 }
 
 pub fn get_actuators(devices: Vec<Arc<ButtplugClientDevice>>) -> Vec<Arc<Actuator>> {

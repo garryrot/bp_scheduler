@@ -69,7 +69,7 @@ impl TkParams {
 
         let selected = selected_settings.iter().map(|x| x.actuator_id.clone()).collect::<Vec<String>>();
         
-        let used = actuators
+        let used: Vec<Arc<Actuator>> = actuators
                 .iter()
                 .filter( |x| actuator_types.iter().any(|y| y == &x.actuator) )
                 .filter( |x| selected.contains( & x.identifier().to_owned() ) )
