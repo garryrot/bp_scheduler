@@ -618,9 +618,8 @@ mod tests {
         let tk = BpClient::connect(settings).unwrap();
         tk.scan_for_devices();
         thread::sleep(Duration::from_secs(5));
-        match tk.connection_result {
-            Ok(_) => panic!("should not be ok"),
-            Err(_) => {}
+        if tk.connection_result.is_ok() {
+            panic!("should not be ok");
         };
     }
 
@@ -766,26 +765,6 @@ mod tests {
         call_registry.get_device(1)[1].assert_strenth(0.0);
     }
 
-    /// Device Status
-    // #[test]
-    // fn get_device_connected() {
-    //     let (mut tk, _) =
-    //         wait_for_connection(vec![scalar(1, "existing", ActuatorType::Vibrate)], None);
-    //     assert!(
-
-    //         tk.status.get_actuator("existing (Vibrate)", tk.buttplug.devices()).unwrap().device.connected(),
-    //         "Existing device returns connected"
-    //     );
-    //     assert_eq!(
-
-    //         tk.status.get_actuator("existing (Vibrate)", tk.buttplug.devices()).unwrap().device.connected(),
-    //         tk.status.get_actuator("actuator_id", devices)
-    //             .get_actuator_connection_status("not existing (Vibrate)"),
-    //         TkConnectionStatus::NotConnected,
-    //         "Non-existing device returns not connected"
-    //     );
-    // }
-
     fn wait_for_connection(
         devices: Vec<DeviceAdded>,
         settings: Option<TkSettings>,
@@ -794,7 +773,7 @@ mod tests {
         let count = connector.devices.len();
 
         // act
-        let mut settings = settings.unwrap_or(TkSettings::new());
+        let mut settings = settings.unwrap_or_default();
         settings.pattern_path = String::from("../deploy/Data/SKSE/Plugins/BpClient/Patterns");
         let mut tk = BpClient::connect_with(
             || async move { connector },
