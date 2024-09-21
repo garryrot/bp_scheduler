@@ -1,17 +1,9 @@
-use std::{
-    fmt::{self, Display},
-    sync::Arc,
-    time::Duration,
-};
+use std::fmt::{self, Display};
 
-use buttplug::{
-    client::ButtplugClientDevice,
-    core::message::ActuatorType,
-};
+use buttplug::core::message::ActuatorType;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
 
-use crate::{actions::Action, actuator::{Actuator}, speed::Speed};
+use crate::speed::Speed;
 
 // use crate::*;
 
@@ -32,16 +24,6 @@ pub enum Task {
     Pattern(Speed, ActuatorType, String),
     Linear(Speed, String),
     LinearStroke(Speed, String),
-}
-
-#[derive(Clone, Debug)]
-pub enum TkConnectionEvent {
-    DeviceAdded(Arc<ButtplugClientDevice>, Option<f64>),
-    DeviceRemoved(Arc<ButtplugClientDevice>),
-    BatteryLevel(Arc<ButtplugClientDevice>, Option<f64>),
-    ActionStarted(Action, Vec<Arc<Actuator>>, Vec<String>, i32),
-    ActionDone(Action, Duration, i32),
-    ActionError(Arc<Actuator>, String),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

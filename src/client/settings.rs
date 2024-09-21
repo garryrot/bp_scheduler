@@ -140,7 +140,7 @@ pub(crate) mod settings_tests {
         setting.device_settings.devices.push(BpDeviceSettings::from_identifier("c"));
 
         let file = "test_config.json";
-        let (path, tmp_dir, tmp_handle) = create_temp_file(file, &serde_json::to_string(&setting).unwrap());
+        let (path, tmp_dir, _tmp_handle) = create_temp_file(file, &serde_json::to_string(&setting).unwrap());
 
         // Act
         println!("{}", path);
