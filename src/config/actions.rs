@@ -1,10 +1,25 @@
-// actions/*.json
-
 use buttplug::core::message::ActuatorType;
 use serde::{Deserialize, Serialize};
 
+use crate::speed::Speed;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Actions(pub Vec<Action>);
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ActionRef {
+    pub action: String,
+    pub strength: Strength,
+}
+
+impl ActionRef {
+    pub fn new(name: &str, strength: Strength) -> Self {
+        ActionRef {
+            action: name.into(),
+            strength,
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Action {
@@ -14,9 +29,8 @@ pub struct Action {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Control {
-    Scalar(Selector, Strength, Vec<ScalarActuators>),
-    Stroke(Selector, Strength, StrokeRange),
-    StrokePattern(Selector, Strength, String),
+    Scalar(Selector, Vec<ScalarActuators>),
+    Stroke(Selector, StrokeRange),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -33,11 +47,54 @@ pub enum Selector {
     BodyParts(Vec<String>),
 }
 
+impl Selector {
+    pub fn from(tags: &Vec<String>) -> Self {
+        let mut result = Selector::All;
+        if !tags.is_empty() {
+            result = Selector::BodyParts(tags.clone());
+        }
+        result
+    }
+    pub fn and(&self, selector: Selector) -> Selector {
+        match self {
+            Selector::All => match selector {
+                Selector::All => Selector::All,
+                Selector::BodyParts(vec) => Selector::BodyParts(vec),
+            },
+            Selector::BodyParts(vec) => match selector {
+                Selector::All => Selector::BodyParts(vec.clone()),
+                Selector::BodyParts(vec2) => {
+                    let mut a = vec.clone();
+                    a.extend(vec2);
+                    Selector::BodyParts(a)
+                },
+            },
+        }
+    }
+    pub fn as_vec(&self) -> Vec<String> {
+        match self {
+            Selector::All => vec![],
+            Selector::BodyParts(vec) => vec.clone(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Strength {
     Constant(i32),
     Funscript(i32, String),
-    RandomFunscript(i32, Vec<String>)
+    RandomFunscript(i32, Vec<String>),
+}
+
+impl Strength {
+    pub fn multiply(self, speed: &Speed) -> Strength {
+        let mult = |x: i32| Speed::new(x.into()).multiply(speed).value.into();
+        match self {
+            Strength::Constant(x) => Strength::Constant(mult(x)),
+            Strength::Funscript(x, fs) => Strength::Funscript(mult(x), fs),
+            Strength::RandomFunscript(x, fss) => Strength::RandomFunscript(mult(x), fss),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -54,22 +111,30 @@ pub enum BodyParts {
     Tags(Vec<String>),
 }
 
-impl Control {
-    pub fn get_selector(&self) -> Selector {
-        match self {
-            Control::Scalar(selector, _, _) => selector.clone(),
-            Control::Stroke(selector, _, _) => selector.clone(),
-            Control::StrokePattern(selector, _, _) => selector.clone(),
+impl Action {
+    pub fn build(name: &str, controls: Vec<Control>) -> Self {
+        let mut selectors = vec![];
+        for control in controls {
+            selectors.push(control);
+        }
+        Action {
+            name: name.into(),
+            control: selectors,
         }
     }
 }
 
 impl Control {
+    pub fn get_selector(&self) -> Selector {
+        match self {
+            Control::Scalar(selector, _) => selector.clone(),
+            Control::Stroke(selector, _) => selector.clone(),
+        }
+    }
     pub fn get_actuators(&self) -> Vec<ActuatorType> {
         match self {
-            Control::Scalar(_, _, y) => y.iter().map(|x| x.clone().into()).collect(),
-            Control::Stroke(_, _, _) => vec![ActuatorType::Position],
-            Control::StrokePattern(_, _, _) => vec![ActuatorType::Position],
+            Control::Scalar(_, y) => y.iter().map(|x| x.clone().into()).collect(),
+            Control::Stroke(_, _) => vec![ActuatorType::Position],
         }
     }
 }
@@ -91,210 +156,40 @@ mod tests {
 
     use super::*;
 
-    impl Action {
-        pub fn build(name: &str, controls: Vec<Control>) -> Self {
-            let mut selectors = vec![];
-            for control in controls {
-                selectors.push(control);
-            }
-            Action {
-                name: name.into(),
-                control: selectors,
-            }
-        }
-    }
-
     #[test]
     pub fn build_mm_actions() {
-        
-        let actions = vec![
-            Action::build("milkmod.milkingstage", vec![
+        let actions = vec![Action::build(
+            "milkmod.milkingstage",
+            vec![
                 Control::Scalar(
                     Selector::BodyParts(vec!["nipple".into()]),
-                    Strength::Constant(100),
-                    vec![
-                        ScalarActuators::Vibrate,
-                        ScalarActuators::Constrict
-                    ],
+                    vec![ScalarActuators::Vibrate, ScalarActuators::Constrict],
                 ),
                 Control::Scalar(
                     Selector::BodyParts(vec!["anal".into()]),
-                    Strength::Constant(100),
-                    vec![
-                        ScalarActuators::Vibrate,
-                        ScalarActuators::Constrict,
-                        ScalarActuators::Oscillate
-                    ],
-                ),
-                Control::Scalar(
-                    Selector::BodyParts(vec!["inflate".into()]),
-                    Strength::Constant(10),
-                    vec![
-                        ScalarActuators::Inflate
-                    ],
-                )
-            ])
-        ];
-        println!("{}", serde_json::to_string_pretty(&actions).unwrap());
-    }
-    
-    #[test]
-    pub fn build_dd_actions() {
-        let dd_actions = Actions(vec![
-            Action::build(
-                "dd.nipple",
-                vec![
-                    Control::Scalar(
-                        Selector::BodyParts(vec!["nipple".into()]),
-                        Strength::Constant(100),
-                        vec![
-                            ScalarActuators::Vibrate
-                        ],
-                    )
-                ],
-            ),
-            Action::build(
-                "dd.vaginal.vibrator",
-                vec![
-                    Control::Scalar(
-                        Selector::BodyParts(vec!["vaginal".into()]),
-                        Strength::RandomFunscript(
-                            100, 
-                            vec![
-                                "60_Blowjob".into(),
-                                "61_Deepthroat".into()
-                            ]
-                        ),
-                        vec![
-                            ScalarActuators::Vibrate
-                        ],
-                    )
-                ]
-            ),
-            Action::build(
-                "dd.vaginal.inflator",
-                vec![
-                    Control::Scalar(
-                        Selector::BodyParts(vec!["vaginal".into()]),
-                        Strength::Constant(33),
-                        vec![
-                            ScalarActuators::Inflate
-                        ],
-                    )
-                ]
-            ),
-            Action::build(
-                "dd.anal.vibrate",
-                vec![
-                    Control::Scalar(
-                        Selector::BodyParts(vec!["anal".into()]),
-                        Strength::Constant(100),
-                        vec![
-                            ScalarActuators::Vibrate
-                        ],
-                    )
-                ]
-            ),
-            Action::build(
-                "dd.anal.inflate",
-                vec![
-                    Control::Scalar(
-                        Selector::BodyParts(vec!["anal".into()]),
-                        Strength::Constant(33),
-                        vec![
-                            ScalarActuators::Inflate
-                        ],
-                    )
-                ]
-            ),
-        ]);
-        println!("{}", serde_json::to_string_pretty(&dd_actions).unwrap());
-
-    }
-
-    #[test]
-    pub fn build_default_actions() {
-
-        let actions = Actions(vec![
-            Action::build(
-                "vibrate",
-                vec![Control::Scalar(
-                    Selector::All,
-                    Strength::Constant(100),
-                    vec![ScalarActuators::Vibrate],
-                )],
-            ),
-            Action::build(
-                "constrict",
-                vec![Control::Scalar(
-                    Selector::All,
-                    Strength::Constant(100),
-                    vec![ScalarActuators::Constrict],
-                )],
-            ),
-            Action::build(
-                "inflate",
-                vec![Control::Scalar(
-                    Selector::All,
-                    Strength::Constant(100),
-                    vec![ScalarActuators::Constrict],
-                )],
-            ),
-            Action::build(
-                "scalar",
-                vec![Control::Scalar(
-                    Selector::All,
-                    Strength::Constant(100),
                     vec![
                         ScalarActuators::Vibrate,
                         ScalarActuators::Constrict,
                         ScalarActuators::Oscillate,
-                        ScalarActuators::Inflate,
                     ],
-                )],
-            ),
-            Action::build(
-                "linear.stroke",
-                vec![Control::Stroke(
-                    Selector::All,
-                    Strength::Constant(100),
-                    StrokeRange {
-                        min_ms: 100,
-                        max_ms: 1500,
-                        min_pos: 0.0,
-                        max_pos: 1.0,
-                    },
-                )],
-            ),
-            Action::build(
-                "oscillate.stroke",
-                vec![Control::Scalar(
-                    Selector::All,
-                    Strength::Constant(100),
-                    vec![ScalarActuators::Oscillate],
-                )],
-            ),
-        ]);
-
-        let json = serde_json::to_string_pretty(&actions).unwrap();
-        println!("{}", json);
+                ),
+                Control::Scalar(
+                    Selector::BodyParts(vec!["inflate".into()]),
+                    vec![ScalarActuators::Inflate],
+                ),
+            ],
+        )];
+        println!("{}", serde_json::to_string_pretty(&actions).unwrap());
     }
 
     #[test]
     pub fn serialize_and_deserialize_actions() {
         let a1 = Actions(vec![
-            Action::build(
-                "1",
-                vec![Control::Scalar(
-                    Selector::All, 
-                    Strength::Constant(100),
-                    vec![])],
-            ),
+            Action::build("1", vec![Control::Scalar(Selector::All, vec![])]),
             Action::build(
                 "2",
                 vec![Control::Scalar(
                     Selector::All,
-                    Strength::Constant(100),
                     vec![ScalarActuators::Constrict],
                 )],
             ),
@@ -305,7 +200,6 @@ mod tests {
                 "3",
                 vec![Control::Scalar(
                     Selector::All,
-                    Strength::Constant(100),
                     vec![ScalarActuators::Constrict],
                 )],
             ),
@@ -313,7 +207,6 @@ mod tests {
                 "4",
                 vec![Control::Scalar(
                     Selector::All,
-                    Strength::Constant(100),
                     vec![ScalarActuators::Vibrate],
                 )],
             ),
@@ -321,7 +214,7 @@ mod tests {
         let s2 = serde_json::to_string_pretty(&a2).unwrap();
         let (_, temp_dir, tmp_path) = create_temp_file("action1.json", &s1);
         add_temp_file("action2.json", &s2, &tmp_path);
-        let actions: Vec<Action>= read_config(temp_dir);
+        let actions: Vec<Action> = read_config(temp_dir);
         assert_eq!(actions.len(), 4);
         tmp_path.close().unwrap();
     }

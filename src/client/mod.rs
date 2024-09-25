@@ -1,8 +1,8 @@
 use anyhow::anyhow;
+use anyhow::Error;
 use buttplug::client::{ButtplugClientDevice, ButtplugClientError};
 use pattern::read_pattern;
 use rand::Rng;
-use anyhow::Error;
 use read::read_config;
 
 use std::time::Duration;
@@ -18,10 +18,7 @@ use tokio::runtime::Runtime;
 
 use buttplug::{
     client::ButtplugClient,
-    core::{
-        connector::*,
-        message::*,
-    },
+    core::{connector::*, message::*},
     server::{
         device::hardware::communication::btleplug::BtlePlugCommunicationManagerBuilder,
         ButtplugServerBuilder,
@@ -31,17 +28,16 @@ use buttplug::{
 use crate::*;
 
 pub mod connection;
-pub mod pattern;
-pub mod client;
-pub mod status;
 pub mod input;
+pub mod pattern;
 pub mod settings;
+pub mod status;
 
-use config::linear::*;
 use actions::*;
-use settings::*;
+use config::linear::*;
 use connection::*;
 use input::*;
+use settings::*;
 use status::*;
 
 #[cfg(feature = "testing")]
@@ -75,7 +71,7 @@ pub struct BpClient {
 impl BpClient {
     pub fn connect_with<T, Fn, Fut>(
         connect_action: Fn,
-        connection_settings: Option<TkSettings>
+        connection_settings: Option<TkSettings>,
     ) -> Result<BpClient, anyhow::Error>
     where
         Fn: FnOnce() -> Fut + Send + 'static,
@@ -104,7 +100,7 @@ impl BpClient {
             scheduler,
             actions: Actions(vec![]),
             buttplug,
-            connection_result
+            connection_result,
         };
         client.runtime.spawn(async move {
             debug!("starting worker thread");
@@ -123,19 +119,18 @@ impl BpClient {
                 let uri = format!("ws://{}", endpoint);
                 BpClient::connect_with(
                     || async move { new_json_ws_client_connector(&uri) },
-                    Some(settings_clone)
+                    Some(settings_clone),
                 )
             }
-            TkConnectionType::InProcess => BpClient::connect_with(
-                || async move { in_process_connector() },
-                Some(settings)
-            ),
+            TkConnectionType::InProcess => {
+                BpClient::connect_with(|| async move { in_process_connector() }, Some(settings))
+            }
             TkConnectionType::Test => get_test_connection(settings),
         }
     }
 
     pub fn read_actions(&mut self) {
-        self.actions = Actions( read_config(self.settings.action_path.clone() ));
+        self.actions = Actions(read_config(self.settings.action_path.clone()));
 
         info!("read {} actions...", self.actions.0.len());
         for action in self.actions.0.iter() {
@@ -145,21 +140,21 @@ impl BpClient {
 
     pub fn scan_for_devices(&self) -> bool {
         info!("start scan");
-        let result = self.runtime.block_on(async move {
-            self.buttplug.start_scanning().await
-        });
+        let result = self
+            .runtime
+            .block_on(async move { self.buttplug.start_scanning().await });
         if let Err(err) = result {
             error!("Failed to start scan {:?}", err);
             return false;
         }
-        true     
+        true
     }
 
     pub fn stop_scan(&self) -> bool {
         info!("stop scan");
-        let result = self.runtime.block_on(async move {
-            self.buttplug.stop_scanning().await
-        });
+        let result = self
+            .runtime
+            .block_on(async move { self.buttplug.stop_scanning().await });
         if let Err(err) = result {
             error!("Failed to stop scan {:?}", err);
             return false;
@@ -172,9 +167,9 @@ impl BpClient {
 
         self.scheduler.stop_all();
         let buttplug = &self.buttplug;
-        let result = self.runtime.block_on(async move {
-            buttplug.stop_all_devices().await
-        });
+        let result = self
+            .runtime
+            .block_on(async move { buttplug.stop_all_devices().await });
 
         if let Err(err) = result {
             error!("Failed to queue stop_all {:?}", err);
@@ -186,9 +181,9 @@ impl BpClient {
     pub fn disconnect(&mut self) {
         info!("disconnect");
         let buttplug = &self.buttplug;
-        let result = self.runtime.block_on(async move {
-            buttplug.disconnect().await
-        });
+        let result = self
+            .runtime
+            .block_on(async move { buttplug.disconnect().await });
         if let Err(err) = result {
             error!("Failed to send disconnect {:?}", err);
         }
@@ -206,18 +201,40 @@ impl BpClient {
         true
     }
 
-    pub fn dispatch_name(
+    pub fn dispatch_refs(
         &mut self,
-        actions_name: Vec<String>,
+        action_refs: Vec<ActionRef>,
         body_parts: Vec<String>,
         speed: Speed,
-        duration: Duration) 
-        -> i32 {
-
+        duration: Duration,
+    ) -> i32 {
         let mut handle = -1;
-        for action_name in actions_name {   
-            if let Some(action) = self.actions.clone().0.iter().find(|x| x.name == action_name) {
-                handle = self.dispatch( action, body_parts.clone(), speed, duration, handle );
+        for action_ref in action_refs {
+            if let Some(action) = self
+                .actions
+                .clone()
+                .0
+                .iter()
+                .find(|x| x.name == action_ref.action)
+            {
+                let strength = action_ref.strength.multiply(&speed);
+                for control in action.control.clone() {
+                    let ext_selector = Selector::from(&body_parts);
+                    handle = self.dispatch(
+                        action.name.clone(),
+                        match control {
+                            Control::Scalar(selector, actuators) => {
+                                Control::Scalar(selector.and(ext_selector), actuators)
+                            }
+                            Control::Stroke(selector, stroke_range) => {
+                                Control::Stroke(selector.and(ext_selector), stroke_range)
+                            }
+                        },
+                        strength.clone(),
+                        duration,
+                        handle,
+                    );
+                }
             }
         }
         handle
@@ -225,35 +242,23 @@ impl BpClient {
 
     pub fn dispatch(
         &mut self,
-        action: &Action,
-        body_parts: Vec<String>,
-        speed: Speed,
-        duration: Duration,
-        existing_handle: i32) -> i32 {
-        let mut handle = existing_handle;
-        for control in action.control.clone() {
-            let filter_parts = match control.get_selector() {
-                Selector::All => body_parts.clone(),
-                Selector::BodyParts(filter) => filter,
-            };
-            handle = self._dispatch_control(&action.clone(), control, filter_parts, speed, duration, handle);
-        }
-        handle
-    }
-
-    fn _dispatch_control(
-        &mut self,
-        action: &Action,
+        action_name: String,
         control: Control,
-        body_parts: Vec<String>,
-        speed: Speed,
+        strength: Strength,
         duration: Duration,
-        handle: i32  
+        handle: i32,
     ) -> i32 {
         self.scheduler.clean_finished_tasks();
-        let action_clone = action.clone();
-        let connected_devices : Vec<Arc<ButtplugClientDevice>> = self.buttplug.devices().iter().filter(|x| x.connected()).cloned().collect();
-        let actuators = get_actuators( connected_devices );
+        let connected_devices: Vec<Arc<ButtplugClientDevice>> = self
+            .buttplug
+            .devices()
+            .iter()
+            .filter(|x| x.connected())
+            .cloned()
+            .collect();
+        let actuators = get_actuators(connected_devices);
+
+        let body_parts = control.get_selector().as_vec();
         let actuator_types = control.get_actuators();
         let pattern_path = self.settings.pattern_path.clone();
         let devices = TkParams::get_enabled_and_selected_devices(
@@ -277,38 +282,108 @@ impl BpClient {
             .scheduler
             .create_player_with_settings(devices, settings, handle);
         let handle = player.handle;
-
-        info!(handle, "dispatching {:?}", action);
+        info!(handle, "dispatching {:?}", action_name);
 
         self.runtime.spawn(async move {
             let now = Instant::now();
-
-            info!("action started {:?} {:?} {:?} {:?}", action_clone, player.actuators, body_parts, player.handle);
+            info!(
+                "action started {:?} {:?} {:?} {:?}",
+                action_name, player.actuators, body_parts, player.handle
+            );
             let result = match control {
-                Control::Scalar(_, Strength::Constant(_), _) => player.play_scalar(duration, speed).await,
-                Control::Scalar(_, strength, _) => {
-                    let pattern = match strength {
-                        Strength::Constant(_) => panic!(),
-                        Strength::Funscript(_, pattern) => pattern.clone(),
-                        Strength::RandomFunscript(_, patterns) => patterns.get(rand::thread_rng().gen_range(0..patterns.len()-1)).unwrap().clone()
-                    };
-                    match read_pattern(&pattern_path, &pattern, true) {
-                        Some(fscript) => player.play_scalar_pattern(duration, fscript, speed).await,
-                        None => panic!("fscript not found"), // todo differnet
+                Control::Scalar(_, _) => match strength {
+                    Strength::Constant(speed) => {
+                        player.play_scalar(duration, Speed::new(speed.into())).await
                     }
-                }
-                Control::Stroke(_, _, range) => player.play_linear_stroke(duration, speed, LinearRange {
-                    min_ms: range.min_ms,
-                    max_ms: range.max_ms,
-                    min_pos: range.min_pos,
-                    max_pos: range.max_pos,
-                    invert: false,
-                    scaling: LinearSpeedScaling::Linear,
-                }).await,
-                Control::StrokePattern(_, _, pattern) => {
-                    match read_pattern(&pattern_path, &pattern, false) {
-                        Some(_) => player.play_scalar(duration, speed).await,
-                        None => panic!("fscript not found"), // todo different
+                    Strength::Funscript(speed, pattern) => {
+                        match read_pattern(&pattern_path, &pattern, true) {
+                            Some(fscript) => {
+                                player
+                                    .play_scalar_pattern(
+                                        duration,
+                                        fscript,
+                                        Speed::new(speed.into()),
+                                    )
+                                    .await
+                            }
+                            None => {
+                                error!("error reading pattern {}", pattern);
+                                player.play_scalar(duration, Speed::new(speed.into())).await
+                            }
+                        }
+                    }
+                    Strength::RandomFunscript(speed, patterns) => {
+                        let pattern = patterns
+                            .get(rand::thread_rng().gen_range(0..patterns.len() - 1))
+                            .unwrap()
+                            .clone();
+                        match read_pattern(&pattern_path, &pattern, true) {
+                            Some(fscript) => {
+                                player
+                                    .play_scalar_pattern(
+                                        duration,
+                                        fscript,
+                                        Speed::new(speed.into()),
+                                    )
+                                    .await
+                            }
+                            None => {
+                                error!("error reading pattern {}", pattern);
+                                player.play_scalar(duration, Speed::new(speed.into())).await
+                            }
+                        }
+                    }
+                },
+                Control::Stroke(_, range) => match strength {
+                    Strength::Constant(speed) => {
+                        player
+                            .play_linear_stroke(
+                                duration,
+                                Speed::new(speed.into()),
+                                LinearRange {
+                                    min_ms: range.min_ms,
+                                    max_ms: range.max_ms,
+                                    min_pos: range.min_pos,
+                                    max_pos: range.max_pos,
+                                    invert: false,
+                                    scaling: LinearSpeedScaling::Linear,
+                                },
+                            )
+                            .await
+                    }
+                    Strength::Funscript(speed, pattern) => {
+                        match read_pattern(&pattern_path, &pattern, true) {
+                            Some(fscript) => player.play_linear(duration, fscript).await,
+                            None => {
+                                error!("error reading pattern {}", pattern);
+                                player
+                                    .play_linear_stroke(
+                                        duration,
+                                        Speed::new(speed.into()),
+                                        LinearRange::max(),
+                                    )
+                                    .await
+                            }
+                        }
+                    }
+                    Strength::RandomFunscript(speed, patterns) => {
+                        let pattern = patterns
+                            .get(rand::thread_rng().gen_range(0..patterns.len() - 1))
+                            .unwrap()
+                            .clone();
+                        match read_pattern(&pattern_path, &pattern, false) {
+                            Some(fscript) => player.play_linear(duration, fscript).await,
+                            None => {
+                                error!("error reading pattern {}", pattern);
+                                player
+                                    .play_linear_stroke(
+                                        duration,
+                                        Speed::new(speed.into()),
+                                        LinearRange::max(),
+                                    )
+                                    .await
+                            }
+                        }
                     }
                 },
             };
@@ -316,11 +391,22 @@ impl BpClient {
 
             match result {
                 Ok(()) => {
-                    info!("action done {:?} {:?} {:?}", action_clone, now.elapsed(), handle);
+                    info!(
+                        "action done {:?} {:?} {:?}",
+                        action_name,
+                        now.elapsed(),
+                        handle
+                    );
                 }
                 Err(err) => {
-                    error!("action error {:?} {:?} {:?} {:?}", err, action_clone, now.elapsed(), handle)
-                },
+                    error!(
+                        "action error {:?} {:?} {:?} {:?}",
+                        err,
+                        action_name,
+                        now.elapsed(),
+                        handle
+                    )
+                }
             };
         });
 
@@ -328,7 +414,8 @@ impl BpClient {
     }
 }
 
-pub fn in_process_connector() -> impl ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage> {
+pub fn in_process_connector(
+) -> impl ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage> {
     ButtplugInProcessClientConnectorBuilder::default()
         .server(
             ButtplugServerBuilder::default()
@@ -370,7 +457,7 @@ mod tests {
             }
         };
     }
-    
+
     impl BpClient {
         pub fn await_connect(&mut self, devices: usize) {
             assert_timeout!(self.buttplug.devices().len() >= devices, "Awaiting connect");
@@ -392,18 +479,22 @@ mod tests {
             Task::Linear(speed, _) => speed,
             Task::LinearStroke(speed, _) => speed,
         };
-        tk.actions = Actions(vec![
-            Action::build(
-                "foobar", 
-                vec![
-                    Control::Scalar( 
-                        Selector::All,
-                        Strength::Constant(100),
-                        vec![ ScalarActuators::Vibrate ],
-                    )] 
-            )
-        ]);
-        tk.dispatch_name( vec![ "foobar".into() ], body_parts, speed, duration )
+        tk.actions = Actions(vec![Action::build(
+            "foobar",
+            vec![Control::Scalar(
+                Selector::All,
+                vec![ScalarActuators::Vibrate],
+            )],
+        )]);
+        tk.dispatch_refs(
+            vec![ActionRef {
+                action: "foobar".into(),
+                strength: Strength::Constant(100),
+            }],
+            body_parts,
+            speed,
+            duration,
+        )
     }
 
     #[test]
@@ -460,9 +551,7 @@ mod tests {
         let count = connector.devices.len();
 
         // act
-        let mut tk =
-            BpClient::connect_with(|| async move { connector }, None)
-                .unwrap();
+        let mut tk = BpClient::connect_with(|| async move { connector }, None).unwrap();
         tk.await_connect(count);
         for actuator_id in get_known_actuator_ids(tk.buttplug.devices(), &tk.settings) {
             tk.settings.device_settings.set_enabled(&actuator_id, true);
@@ -557,11 +646,9 @@ mod tests {
     ) -> (BpClient, i32) {
         let settings = TkSettings::new();
         let pattern_path = String::from("../deploy/Data/SKSE/Plugins/BpClient/Patterns");
-        let mut tk = BpClient::connect_with(
-            || async move { in_process_connector() },
-            Some(settings)
-        )
-        .unwrap();
+        let mut tk =
+            BpClient::connect_with(|| async move { in_process_connector() }, Some(settings))
+                .unwrap();
         tk.scan_for_devices();
         tk.await_connect(1);
         thread::sleep(Duration::from_secs(2));
@@ -681,7 +768,7 @@ mod tests {
 
         let (tk, _) = wait_for_connection(vec![], Some(settings));
         assert!(
-                 get_known_actuator_ids(tk.buttplug.devices(), &tk.settings)
+            get_known_actuator_ids(tk.buttplug.devices(), &tk.settings)
                 .contains(&String::from("foreign")),
             "Contains additional device from settings"
         );
@@ -775,11 +862,7 @@ mod tests {
         // act
         let mut settings = settings.unwrap_or_default();
         settings.pattern_path = String::from("../deploy/Data/SKSE/Plugins/BpClient/Patterns");
-        let mut tk = BpClient::connect_with(
-            || async move { connector },
-            Some(settings)
-        )
-        .unwrap();
+        let mut tk = BpClient::connect_with(|| async move { connector }, Some(settings)).unwrap();
         tk.await_connect(count);
 
         let actuators = get_actuators(tk.buttplug.devices());
