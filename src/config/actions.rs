@@ -22,9 +22,46 @@ impl ActionRef {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Strength {
+    Constant(i32),
+    Funscript(i32, String),
+    RandomFunscript(i32, Vec<String>),
+}
+
+impl Strength {
+    pub fn multiply(self, speed: &Speed) -> Strength {
+        let mult = |x: i32| Speed::new(x.into()).multiply(speed).value.into();
+        match self {
+            Strength::Constant(x) => Strength::Constant(mult(x)),
+            Strength::Funscript(x, fs) => Strength::Funscript(mult(x), fs),
+            Strength::RandomFunscript(x, fss) => Strength::RandomFunscript(mult(x), fss),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum BodyParts {
+    All,
+    Tags(Vec<String>),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Action {
     pub name: String,
     pub control: Vec<Control>,
+}
+
+impl Action {
+    pub fn build(name: &str, controls: Vec<Control>) -> Self {
+        let mut selectors = vec![];
+        for control in controls {
+            selectors.push(control);
+        }
+        Action {
+            name: name.into(),
+            control: selectors,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -33,12 +70,19 @@ pub enum Control {
     Stroke(Selector, StrokeRange),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StrokeRange {
-    pub min_ms: i64,
-    pub max_ms: i64,
-    pub min_pos: f64,
-    pub max_pos: f64,
+impl Control {
+    pub fn get_selector(&self) -> Selector {
+        match self {
+            Control::Scalar(selector, _) => selector.clone(),
+            Control::Stroke(selector, _) => selector.clone(),
+        }
+    }
+    pub fn get_actuators(&self) -> Vec<ActuatorType> {
+        match self {
+            Control::Scalar(_, y) => y.iter().map(|x| x.clone().into()).collect(),
+            Control::Stroke(_, _) => vec![ActuatorType::Position],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -79,23 +123,6 @@ impl Selector {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Strength {
-    Constant(i32),
-    Funscript(i32, String),
-    RandomFunscript(i32, Vec<String>),
-}
-
-impl Strength {
-    pub fn multiply(self, speed: &Speed) -> Strength {
-        let mult = |x: i32| Speed::new(x.into()).multiply(speed).value.into();
-        match self {
-            Strength::Constant(x) => Strength::Constant(mult(x)),
-            Strength::Funscript(x, fs) => Strength::Funscript(mult(x), fs),
-            Strength::RandomFunscript(x, fss) => Strength::RandomFunscript(mult(x), fss),
-        }
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ScalarActuators {
@@ -103,40 +130,6 @@ pub enum ScalarActuators {
     Oscillate,
     Constrict,
     Inflate,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum BodyParts {
-    All,
-    Tags(Vec<String>),
-}
-
-impl Action {
-    pub fn build(name: &str, controls: Vec<Control>) -> Self {
-        let mut selectors = vec![];
-        for control in controls {
-            selectors.push(control);
-        }
-        Action {
-            name: name.into(),
-            control: selectors,
-        }
-    }
-}
-
-impl Control {
-    pub fn get_selector(&self) -> Selector {
-        match self {
-            Control::Scalar(selector, _) => selector.clone(),
-            Control::Stroke(selector, _) => selector.clone(),
-        }
-    }
-    pub fn get_actuators(&self) -> Vec<ActuatorType> {
-        match self {
-            Control::Scalar(_, y) => y.iter().map(|x| x.clone().into()).collect(),
-            Control::Stroke(_, _) => vec![ActuatorType::Position],
-        }
-    }
 }
 
 impl From<ScalarActuators> for buttplug::core::message::ActuatorType {
@@ -148,6 +141,14 @@ impl From<ScalarActuators> for buttplug::core::message::ActuatorType {
             ScalarActuators::Inflate => ActuatorType::Inflate,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StrokeRange {
+    pub min_ms: i64,
+    pub max_ms: i64,
+    pub min_pos: f64,
+    pub max_pos: f64,
 }
 
 #[cfg(test)]
