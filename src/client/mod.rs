@@ -282,7 +282,7 @@ impl BpClient {
             .scheduler
             .create_player_with_settings(devices, settings, handle);
         let handle = player.handle;
-        info!(handle, "dispatching {:?}", action_name);
+        info!(handle, "dispatching {:?} {:?} {:?}", action_name, strength, control);
 
         self.runtime.spawn(async move {
             let now = Instant::now();
