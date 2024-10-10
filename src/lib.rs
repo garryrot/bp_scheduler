@@ -18,6 +18,7 @@ pub mod player;
 pub mod speed;
 pub mod config;
 pub mod client;
+pub mod dynamic;
 
 mod access;
 mod worker;
@@ -127,7 +128,7 @@ impl ButtplugScheduler {
             }
         } else {
             error!("Unknown handle {}", handle);
-        }
+        } 
     }
 
     pub fn stop_all(&mut self) {

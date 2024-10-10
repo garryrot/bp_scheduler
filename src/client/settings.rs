@@ -9,12 +9,6 @@ use crate::devices::BpSettings;
 
 use super::connection::TkConnectionType;
 
-// TODO weg
-pub static DEFAULT_PATTERN_PATH: &str = "Data\\SKSE\\Plugins\\Telekinesis\\Patterns";
-pub static DEFAULT_ACTION_PATH: &str = "Data\\SKSE\\Plugins\\Telekinesis\\Actions";
-pub static SETTINGS_PATH: &str = "Data\\SKSE\\Plugins";
-pub static SETTINGS_FILE: &str = "Telekinesis.v2.json";
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TkLogLevel {
     Trace = 0,
@@ -57,8 +51,8 @@ impl TkSettings {
             device_settings: BpSettings {
                 devices: vec![]
             },
-            pattern_path: String::from(DEFAULT_PATTERN_PATH),
-            action_path: String::from(DEFAULT_ACTION_PATH)
+            pattern_path: "".into(),
+            action_path: "".into()
         }
     }
 
@@ -70,8 +64,7 @@ impl TkSettings {
         let path = [settings_path, settings_file].iter().collect::<PathBuf>();
         match fs::read_to_string(path) {
             Ok(settings_json) => match serde_json::from_str::<TkSettings>(&settings_json) {
-                Ok(mut settings) => {
-                    settings.pattern_path = String::from(DEFAULT_PATTERN_PATH);
+                Ok(settings) => {
                     settings
                 }
                 Err(err) => {
