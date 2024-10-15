@@ -11,19 +11,29 @@ pub mod tracking_mirror;
 pub mod util;
 
 pub struct Margins {
-    most_inward: f64,
-    most_outward: f64
+    most_in: f64,
+    most_out: f64
+}
+
+impl Margins {
+    pub fn new( most_in: f64, most_out: f64) -> Self {
+        Margins {
+            most_in,
+            most_out,
+        }
+    }
 }
 
 pub enum TrackingSignal {
-    Penetration(Instant), // starts or refreshes the movement time window for time_window_ms
-    OutwardCompleted(Instant, f64 /* most inward */, f64 /* most outward */), // outward movement finished from pos1 to pos2
-    InwardCompleted(Instant, f64 /* most inward */, f64 /* most outward */), // outward movement finished from pos1 to pos2
+    Penetration(Instant),
+    OuterTurn(Instant, Margins),
+    InnerTurn(Instant, Margins),
     Stop,
 }
 
 pub struct DynamicSettings {
     pub boundaries: LinearRange,
+    pub move_at_start: bool,
     pub min_resolution_ms: u32,
     pub min_duration_ms: u32,
     pub default_stroke_ms: u32,
@@ -36,6 +46,7 @@ impl Default for DynamicSettings {
     fn default() -> Self {
         DynamicSettings {
             boundaries: LinearRange::max(),
+            move_at_start: true,
             min_resolution_ms: 50,
             min_duration_ms: 200,
             default_stroke_ms: 400,
@@ -44,11 +55,6 @@ impl Default for DynamicSettings {
             time_window_ms: 3_000,
         }
     }
-}
-
-pub enum Direction {
-    Inward,
-    Outward
 }
 
 pub struct DynamicTracking {
