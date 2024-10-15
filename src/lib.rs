@@ -18,7 +18,7 @@ pub mod player;
 pub mod speed;
 pub mod config;
 pub mod client;
-pub mod dynamic;
+pub mod dynamic_tracking;
 
 mod access;
 mod worker;
