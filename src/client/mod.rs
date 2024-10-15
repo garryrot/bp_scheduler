@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use anyhow::Error;
 use buttplug::client::{ButtplugClientDevice, ButtplugClientError};
+// use buttplug::server::device::hardware::communication::serialport::SerialPortCommunicationManagerBuilder;
+// use buttplug::server::device::hardware::communication::xinput::XInputDeviceCommunicationManagerBuilder;
 use pattern::read_pattern;
 use rand::Rng;
 use read::read_config;
@@ -65,7 +67,7 @@ pub struct BpClient {
     pub buttplug: ButtplugClient,
     pub runtime: Runtime,
     pub connection_result: Result<(), ButtplugClientError>,
-    scheduler: ButtplugScheduler,
+    pub scheduler: ButtplugScheduler,
 }
 
 impl BpClient {
@@ -420,6 +422,8 @@ pub fn in_process_connector(
         .server(
             ButtplugServerBuilder::default()
                 .comm_manager(BtlePlugCommunicationManagerBuilder::default())
+                // .comm_manager(SerialPortCommunicationManagerBuilder::default())
+                // .comm_manager(XInputDeviceCommunicationManagerBuilder::default())
                 .finish()
                 .expect("Could not create in-process-server."),
         )
