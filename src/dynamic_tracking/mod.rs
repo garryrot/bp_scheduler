@@ -31,6 +31,7 @@ pub enum TrackingSignal {
     Stop,
 }
 
+#[derive(Debug, Clone)]
 pub struct DynamicSettings {
     pub boundaries: LinearRange,
     pub move_at_start: bool,
@@ -39,7 +40,7 @@ pub struct DynamicSettings {
     pub default_stroke_ms: u32,
     pub default_stroke_in: f64,
     pub default_stroke_out: f64,
-    pub time_window_ms: u32,
+    pub stroke_window_ms: u32,
 }
 
 impl Default for DynamicSettings {
@@ -52,7 +53,7 @@ impl Default for DynamicSettings {
             default_stroke_ms: 400,
             default_stroke_in: 0.0,
             default_stroke_out: 1.0,
-            time_window_ms: 3_000,
+            stroke_window_ms: 3_000,
         }
     }
 }

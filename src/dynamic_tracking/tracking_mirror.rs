@@ -13,7 +13,7 @@ impl DynamicTracking {
         let penetrating = |pen_time: &Option<Instant>| match pen_time {
             Some(time) => {
                 (Instant::now() - *time)
-                    < Duration::from_millis(self.settings.time_window_ms.into())
+                    < Duration::from_millis(self.settings.stroke_window_ms.into())
             }
             None => false,
         };
@@ -29,7 +29,7 @@ impl DynamicTracking {
         let mut last_pen = None;
         let mut meas = Movements::new(
             self.settings.default_stroke_ms,
-            self.settings.time_window_ms,
+            self.settings.stroke_window_ms,
         );
 
         let mut last_turn = Instant::now() - Duration::from_secs(99999);
@@ -101,8 +101,8 @@ impl DynamicTracking {
             info!(
                 "moving {} to {} over {}ms...",
                 device.name(),
-                estimated_dur,
-                last_pos
+                last_pos,
+                estimated_dur
             );
             device
                 .linear(&LinearCommand::Linear(estimated_dur, last_pos))
@@ -153,7 +153,7 @@ mod tests {
                 default_stroke_ms: 400,
                 default_stroke_in: 0.0,
                 default_stroke_out: 1.0,
-                time_window_ms: 3_000,
+                stroke_window_ms: 3_000,
             },
             signals: receiver,
             devices,
