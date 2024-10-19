@@ -21,7 +21,7 @@ impl DynamicTracking {
         if self.settings.move_at_start {
             self.move_devices(
                 self.settings.default_stroke_ms,
-                self.settings.default_stroke_out,
+                self.settings.default_stroke_in,
             )
             .await;
         }
@@ -54,7 +54,7 @@ impl DynamicTracking {
                                 let estimated_dur = meas.get_avg_ms();
                                 let target_pos: f64 = limit_speed(
                                     last_pos,
-                                    margins.most_in,
+                                    margins.most_out,
                                     estimated_dur,
                                     self.settings.min_duration_ms,
                                 );
@@ -76,7 +76,7 @@ impl DynamicTracking {
                                 let estimated_dur = meas.get_avg_ms();
                                 let target_pos = limit_speed(
                                     last_pos,
-                                    margins.most_out,
+                                    margins.most_in,
                                     estimated_dur,
                                     self.settings.min_duration_ms,
                                 );
@@ -186,9 +186,9 @@ mod tests {
     pub async fn mirror_movements_from_last_inward_as_outward() {
         let test = TestFixture::new().await;
         test.signal_penetration();
-        test.signal_inner(0, 0.0, 0.8);
-        test.signal_outer(200, 0.1, 0.0);
-        test.signal_inner(500, 0.0, 0.9);
+        test.signal_inner(0, 0.8, 0.0);
+        test.signal_outer(200, 0.0, 0.1);
+        test.signal_inner(500, 0.9, 0.0);
         let results = test.finish().await;
 
         let msgs = results.call_registry.get_device(1);
@@ -201,9 +201,9 @@ mod tests {
     pub async fn mirror_movements_too_fast_shortened() {
         let test = TestFixture::new().await;
         test.signal_penetration();
-        test.signal_inner(100, 0.0, 1.0);
+        test.signal_inner(100,1.0, 0.0);
         test.signal_outer(200, 0.0, 0.0);
-        test.signal_inner(300, 0.0, 1.0);
+        test.signal_inner(300, 1.0, 0.0);
         let results = test.finish().await;
 
         let msgs = results.call_registry.get_device(1);
@@ -216,7 +216,7 @@ mod tests {
     pub async fn movements_below_min_resolutions_only_first_one_registered() {
         let test = TestFixture::new().await;
         test.signal_penetration();
-        test.signal_inner(10, 0.0, 1.0);
+        test.signal_inner(10, 1.0, 0.0);
         test.signal_outer(15, 0.0, 0.0);
         test.signal_outer(220, 0.0, 0.0);
         let results = test.finish().await;
