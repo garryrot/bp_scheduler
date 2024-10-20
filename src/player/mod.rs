@@ -1,6 +1,7 @@
 use funscript::FScript;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
+use worker::{WorkerResult, WorkerTask};
 
 use std::{fmt, sync::Arc, time::Duration};
 use tokio::{
@@ -18,9 +19,11 @@ use crate::{
         LinearSpeedScaling
     }, 
     speed::Speed, 
-    worker::*, 
     ActuatorSettings
 };
+
+pub mod access;
+pub mod worker;
 
 /// Pattern executor that can be passed from the schedulers main-thread to a sub-thread
 pub struct PatternPlayer {

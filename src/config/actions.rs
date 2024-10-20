@@ -1,3 +1,5 @@
+use std::fmt::{self, Display};
+
 use buttplug::core::message::ActuatorType;
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +41,16 @@ impl Strength {
     }
 }
 
+impl Display for Strength {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Strength::Constant(speed) => write!(f, "Constant({}%)", speed),
+            Strength::Funscript(speed, funscript) => write!(f, "Funscript({}, {}%)", funscript, speed),
+            Strength::RandomFunscript(speed, vec) => write!(f, "Random({}%, {})", speed, vec.join(",")),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum BodyParts {
     All,
@@ -66,7 +78,7 @@ impl Action {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Control {
-    Scalar(Selector, Vec<ScalarActuators>),
+    Scalar(Selector, Vec<ScalarActuator>),
     Stroke(Selector, StrokeRange),
 }
 
@@ -125,20 +137,20 @@ impl Selector {
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ScalarActuators {
+pub enum ScalarActuator {
     Vibrate,
     Oscillate,
     Constrict,
     Inflate,
 }
 
-impl From<ScalarActuators> for buttplug::core::message::ActuatorType {
-    fn from(val: ScalarActuators) -> Self {
+impl From<ScalarActuator> for buttplug::core::message::ActuatorType {
+    fn from(val: ScalarActuator) -> Self {
         match val {
-            ScalarActuators::Vibrate => ActuatorType::Vibrate,
-            ScalarActuators::Oscillate => ActuatorType::Oscillate,
-            ScalarActuators::Constrict => ActuatorType::Constrict,
-            ScalarActuators::Inflate => ActuatorType::Inflate,
+            ScalarActuator::Vibrate => ActuatorType::Vibrate,
+            ScalarActuator::Oscillate => ActuatorType::Oscillate,
+            ScalarActuator::Constrict => ActuatorType::Constrict,
+            ScalarActuator::Inflate => ActuatorType::Inflate,
         }
     }
 }
@@ -153,7 +165,7 @@ pub struct StrokeRange {
 
 #[cfg(test)]
 mod tests {
-    use crate::{client::settings::settings_tests::*, read::read_config};
+    use crate::{config::client::settings_tests::*, read::read_config};
 
     use super::*;
 
@@ -164,19 +176,19 @@ mod tests {
             vec![
                 Control::Scalar(
                     Selector::BodyParts(vec!["nipple".into()]),
-                    vec![ScalarActuators::Vibrate, ScalarActuators::Constrict],
+                    vec![ScalarActuator::Vibrate, ScalarActuator::Constrict],
                 ),
                 Control::Scalar(
                     Selector::BodyParts(vec!["anal".into()]),
                     vec![
-                        ScalarActuators::Vibrate,
-                        ScalarActuators::Constrict,
-                        ScalarActuators::Oscillate,
+                        ScalarActuator::Vibrate,
+                        ScalarActuator::Constrict,
+                        ScalarActuator::Oscillate,
                     ],
                 ),
                 Control::Scalar(
                     Selector::BodyParts(vec!["inflate".into()]),
-                    vec![ScalarActuators::Inflate],
+                    vec![ScalarActuator::Inflate],
                 ),
             ],
         )];
@@ -191,7 +203,7 @@ mod tests {
                 "2",
                 vec![Control::Scalar(
                     Selector::All,
-                    vec![ScalarActuators::Constrict],
+                    vec![ScalarActuator::Constrict],
                 )],
             ),
         ]);
@@ -201,14 +213,14 @@ mod tests {
                 "3",
                 vec![Control::Scalar(
                     Selector::All,
-                    vec![ScalarActuators::Constrict],
+                    vec![ScalarActuator::Constrict],
                 )],
             ),
             Action::build(
                 "4",
                 vec![Control::Scalar(
                     Selector::All,
-                    vec![ScalarActuators::Vibrate],
+                    vec![ScalarActuator::Vibrate],
                 )],
             ),
         ]);

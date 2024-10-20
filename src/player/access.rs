@@ -16,17 +16,12 @@ pub struct DeviceEntry {
     pub linear_tasks: Vec<(i32, Speed)>,
 }
 
+#[derive(Default)]
 pub struct DeviceAccess {
     device_actions: HashMap<String, DeviceEntry>,
 }
 
 impl DeviceAccess {
-    pub fn default() -> Self {
-        DeviceAccess {
-            device_actions: HashMap::new(),
-        }
-    }
-
     pub async fn start_scalar(
         &mut self,
         actuator: &Arc<Actuator>,

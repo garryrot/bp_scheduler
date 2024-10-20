@@ -5,11 +5,10 @@ use tokio::time::Instant;
 use tracing::{debug, error, info};
 
 use crate::dynamic_tracking::{movements::*, util::*, DynamicTracking, TrackingSignal};
-use crate::worker::WorkerResult;
 
 impl DynamicTracking {
     /// mirrors the movement range of the last range for an estimated duration
-    pub async fn track_mirror(mut self) -> WorkerResult {
+    pub async fn track_mirror(mut self) {
         let penetrating = |pen_time: &Option<Instant>| match pen_time {
             Some(time) => {
                 (Instant::now() - *time)
@@ -93,7 +92,6 @@ impl DynamicTracking {
                 }
             }
         }
-        Ok(())
     }
 
     async fn move_devices(&self, estimated_dur: u32, last_pos: f64) {
@@ -270,7 +268,7 @@ mod tests {
         async fn finish(self) -> ButtplugTestClient {
             let test_client = self.client;
             self.sender.send(TrackingSignal::Stop).unwrap();
-            self.tracking.track_mirror().await.unwrap();
+            self.tracking.track_mirror().await;
             test_client
         }
     }

@@ -1,8 +1,7 @@
 use buttplug::client::ButtplugClientDevice;
 use buttplug::core::message::ActuatorType;
 use std::{
-    fmt::{self, Display},
-    sync::Arc,
+    fmt::{self, Display}, sync::Arc
 };
 
 #[derive(Clone)]
@@ -42,6 +41,8 @@ impl Actuator {
         }
         format!("{} ({})", device.name(), actuator)
     }
+
+
 }
 
 impl Display for Actuator {
@@ -53,5 +54,37 @@ impl Display for Actuator {
 impl fmt::Debug for Actuator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Actuator({})", self.identifier)
+    }
+}
+
+pub trait Actuators {
+    fn flatten_actuators(&self) -> Vec<Arc<Actuator>>;
+}
+
+impl Actuators for Vec<Arc<ButtplugClientDevice>> {
+    fn flatten_actuators(&self) -> Vec<Arc<Actuator>> {
+        self.iter().map(|x| x.flatten_actuators()).flatten().collect()
+    }
+}
+
+impl Actuators for &Arc<ButtplugClientDevice> {
+    fn flatten_actuators(&self) -> Vec<Arc<Actuator>> {
+        let mut actuators = vec![];
+        if let Some(scalar_cmd) = self.message_attributes().scalar_cmd() {
+            for (idx, scalar_cmd) in scalar_cmd.iter().enumerate() {
+                actuators.push(Actuator::new(self, *scalar_cmd.actuator_type(), idx))
+            }
+        }
+        if let Some(linear_cmd) = self.message_attributes().linear_cmd() {
+            for (idx, _) in linear_cmd.iter().enumerate() {
+                actuators.push(Actuator::new(self, ActuatorType::Position, idx));
+            }
+        }
+        if let Some(rotate_cmd) = self.message_attributes().rotate_cmd() {
+            for (idx, _) in rotate_cmd.iter().enumerate() {
+                actuators.push(Actuator::new(self, ActuatorType::Rotate, idx))
+            }
+        }
+        actuators.into_iter().map(Arc::new).collect()
     }
 }

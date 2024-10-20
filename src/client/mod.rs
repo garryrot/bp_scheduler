@@ -1,68 +1,63 @@
-use anyhow::anyhow;
-use anyhow::Error;
-use buttplug::client::{ButtplugClientDevice, ButtplugClientError};
-// use buttplug::server::device::hardware::communication::serialport::SerialPortCommunicationManagerBuilder;
-// use buttplug::server::device::hardware::communication::xinput::XInputDeviceCommunicationManagerBuilder;
-use pattern::read_pattern;
-use rand::Rng;
-use read::read_config;
-
 use std::time::Duration;
 use std::{
     fmt::{self},
     time::Instant,
 };
 
+use anyhow::anyhow;
+use anyhow::Error;
+
+use connection::ConnectionType;
+use rand::Rng;
+
 use futures::Future;
 use tracing::{debug, error, info};
 
 use tokio::runtime::Runtime;
 
+use buttplug::client::{ButtplugClient, ButtplugClientError};
+use buttplug::server::device::hardware::communication::serialport::SerialPortCommunicationManagerBuilder;
+use buttplug::server::device::hardware::communication::xinput::XInputDeviceCommunicationManagerBuilder;
 use buttplug::{
-    client::ButtplugClient,
     core::{connector::*, message::*},
     server::{
         device::hardware::communication::btleplug::BtlePlugCommunicationManagerBuilder,
         ButtplugServerBuilder,
     },
 };
+use util::trim_lower_str_list;
 
 use crate::*;
 
-pub mod connection;
-pub mod input;
-pub mod pattern;
-pub mod settings;
+pub mod filter;
 pub mod status;
 
+use config::client::*;
+use read::read_config;
+use pattern::read_pattern;
 use actions::*;
 use config::linear::*;
-use connection::*;
-use input::*;
-use settings::*;
-use status::*;
+use filter::*;
 
 #[cfg(feature = "testing")]
 use bp_fakes::FakeDeviceConnector;
 
 #[cfg(feature = "testing")]
-pub fn get_test_connection(settings: TkSettings) -> Result<BpClient, Error> {
+pub fn get_test_connection(settings: ClientSettings) -> Result<BpClient, Error> {
     BpClient::connect_with(
         || async move { FakeDeviceConnector::device_demo().0 },
         Some(options),
-        TkConnectionType::Test,
+        ConnectionType::Test,
     )
 }
 
 #[cfg(not(feature = "testing"))]
-pub fn get_test_connection(_: TkSettings) -> Result<BpClient, Error> {
+pub fn get_test_connection(_: ClientSettings) -> Result<BpClient, Error> {
     Err(anyhow!("Compiled without testing support"))
 }
 
-pub static ERROR_HANDLE: i32 = -1;
-
 pub struct BpClient {
-    pub settings: TkSettings,
+    pub settings: ClientSettings,
     pub actions: Actions,
     pub buttplug: ButtplugClient,
     pub runtime: Runtime,
@@ -73,7 +68,7 @@ pub struct BpClient {
 impl BpClient {
     pub fn connect_with<T, Fn, Fut>(
         connect_action: Fn,
-        connection_settings: Option<TkSettings>,
+        connection_settings: Option<ClientSettings>,
     ) -> Result<BpClient, anyhow::Error>
     where
         Fn: FnOnce() -> Fut + Send + 'static,
@@ -113,21 +108,44 @@ impl BpClient {
     }
 }
 
+fn in_process_connector(
+    features: InProcessFeatures,
+) -> impl ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage> {
+    info!(?features, "connecting in process");
+    let mut builder = ButtplugServerBuilder::default();
+    if features.bluetooth {
+        builder.comm_manager(BtlePlugCommunicationManagerBuilder::default());
+    }
+    if features.serial {
+        builder.comm_manager(SerialPortCommunicationManagerBuilder::default());
+    }
+    if features.xinput {
+        builder.comm_manager(XInputDeviceCommunicationManagerBuilder::default());
+    }
+    let server = builder
+        .finish()
+        .expect("Could not create in-process-server.");
+    ButtplugInProcessClientConnectorBuilder::default()
+        .server(server)
+        .finish()
+}
+
 impl BpClient {
-    pub fn connect(settings: TkSettings) -> Result<BpClient, Error> {
+    pub fn connect(settings: ClientSettings) -> Result<BpClient, Error> {
         let settings_clone = settings.clone();
         match settings.connection {
-            TkConnectionType::WebSocket(endpoint) => {
+            ConnectionType::WebSocket(endpoint) => {
                 let uri = format!("ws://{}", endpoint);
                 BpClient::connect_with(
                     || async move { new_json_ws_client_connector(&uri) },
                     Some(settings_clone),
                 )
             }
-            TkConnectionType::InProcess => {
-                BpClient::connect_with(|| async move { in_process_connector() }, Some(settings))
-            }
-            TkConnectionType::Test => get_test_connection(settings),
+            ConnectionType::InProcess => BpClient::connect_with(
+                move || async move { in_process_connector(settings.in_process_features) },
+                Some(settings),
+            ),
+            ConnectionType::Test => get_test_connection(settings),
         }
     }
 
@@ -251,26 +269,19 @@ impl BpClient {
         handle: i32,
     ) -> i32 {
         self.scheduler.clean_finished_tasks();
-        let connected_devices: Vec<Arc<ButtplugClientDevice>> = self
-            .buttplug
-            .devices()
-            .iter()
-            .filter(|x| x.connected())
-            .cloned()
-            .collect();
-        let actuators = get_actuators(connected_devices);
-
         let body_parts = control.get_selector().as_vec();
-        let actuator_types = control.get_actuators();
-        let pattern_path = self.settings.pattern_path.clone();
-        let devices = TkParams::get_enabled_and_selected_devices(
-            &actuators,
-            &body_parts,
-            &actuator_types,
-            &self.settings.device_settings.devices,
-        );
 
-        let settings = devices
+        let (updated_settings, actuators) = Filter::new(self.settings.device_settings.clone(), &self.buttplug.devices())
+            .connected()
+            .enabled()
+            .with_actuator_types(&control.get_actuators())
+            .with_body_parts(&trim_lower_str_list(&body_parts))
+            .result();
+        self.settings.device_settings = updated_settings;
+
+        let pattern_path = self.settings.pattern_path.clone();
+
+        let settings = actuators
             .iter()
             .map(|x| {
                 self.settings
@@ -282,9 +293,12 @@ impl BpClient {
 
         let player = self
             .scheduler
-            .create_player_with_settings(devices, settings, handle);
+            .create_player_with_settings(actuators, settings, handle);
         let handle = player.handle;
-        info!(handle, "dispatching {:?} {:?} {:?}", action_name, strength, control);
+        info!(
+            handle,
+            "dispatching {:?} {:?} {:?}", action_name, strength, control
+        );
 
         self.runtime.spawn(async move {
             let now = Instant::now();
@@ -416,20 +430,6 @@ impl BpClient {
     }
 }
 
-pub fn in_process_connector(
-) -> impl ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage> {
-    ButtplugInProcessClientConnectorBuilder::default()
-        .server(
-            ButtplugServerBuilder::default()
-                .comm_manager(BtlePlugCommunicationManagerBuilder::default())
-                // .comm_manager(SerialPortCommunicationManagerBuilder::default())
-                // .comm_manager(XInputDeviceCommunicationManagerBuilder::default())
-                .finish()
-                .expect("Could not create in-process-server."),
-        )
-        .finish()
-}
-
 impl fmt::Debug for BpClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BpClient")
@@ -440,6 +440,8 @@ impl fmt::Debug for BpClient {
 
 #[cfg(test)]
 mod tests {
+    use crate::client::status::get_known_actuator_ids;
+    use actuator::Actuators;
     use buttplug::core::message::{ActuatorType, DeviceAdded};
     use funscript::FScript;
     use pattern::read_pattern;
@@ -471,32 +473,26 @@ mod tests {
     /// Vibrate
     pub fn test_cmd(
         tk: &mut BpClient,
-        task: Task,
+        strength: Strength,
         duration: Duration,
         body_parts: Vec<String>,
         _: Option<FScript>,
-        _: &[ActuatorType],
+        actuators: &[ScalarActuator],
     ) -> i32 {
-        let speed: Speed = match task {
-            Task::Scalar(speed) => speed,
-            Task::Pattern(speed, _, _) => speed,
-            Task::Linear(speed, _) => speed,
-            Task::LinearStroke(speed, _) => speed,
-        };
         tk.actions = Actions(vec![Action::build(
             "foobar",
             vec![Control::Scalar(
                 Selector::All,
-                vec![ScalarActuators::Vibrate],
+                actuators.to_vec(),
             )],
         )]);
         tk.dispatch_refs(
             vec![ActionRef {
                 action: "foobar".into(),
-                strength: Strength::Constant(100),
+                strength,
             }],
             body_parts,
-            speed,
+            Speed::max(),
             duration,
         )
     }
@@ -510,11 +506,11 @@ mod tests {
         // act
         let handle = test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::MAX,
             vec![],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
         thread::sleep(Duration::from_secs(1));
         call_registry.get_device(1)[0].assert_strenth(1.0);
@@ -534,11 +530,11 @@ mod tests {
         thread::sleep(Duration::from_secs(1));
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::from_secs(1),
             vec![],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
         thread::sleep(Duration::from_secs(2));
         call_registry.get_device(1)[0].assert_strenth(1.0);
@@ -557,16 +553,16 @@ mod tests {
         // act
         let mut tk = BpClient::connect_with(|| async move { connector }, None).unwrap();
         tk.await_connect(count);
-        for actuator_id in get_known_actuator_ids(tk.buttplug.devices(), &tk.settings) {
-            tk.settings.device_settings.set_enabled(&actuator_id, true);
+        for actuator_id in &get_known_actuator_ids(tk.buttplug.devices(), &tk.settings) {
+            tk.settings.device_settings.set_enabled(actuator_id, true);
         }
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::new(100)),
+            Strength::Constant(100),
             Duration::from_millis(1),
             vec![],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
 
         // assert
@@ -586,11 +582,11 @@ mod tests {
         // act
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::from_millis(1),
             vec![String::from("does not exist")],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
         thread::sleep(Duration::from_millis(50));
 
@@ -616,11 +612,11 @@ mod tests {
         // act
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::from_millis(1),
             vec![],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
         thread::sleep(Duration::from_secs(1));
 
@@ -630,6 +626,41 @@ mod tests {
         call_registry.get_device(3)[0].assert_strenth(1.0);
         call_registry.get_device(3)[1].assert_strenth(0.0);
         call_registry.assert_unused(2);
+    }
+
+    
+    #[test]
+    fn settings_only_move_selected_actuators() {
+        // arrange
+        let (mut tk, call_registry) = wait_for_connection(
+            vec![
+                scalar(1, "vib1", ActuatorType::Vibrate),
+                scalar(2, "vib2", ActuatorType::Inflate)
+            ],
+            None,
+        );
+        tk.settings
+            .device_settings
+            .set_enabled("vib1 (Vibrate)", true);
+        tk.settings
+            .device_settings
+            .set_enabled("vib2 (Inflate)", true);
+        
+        // act
+        test_cmd(
+            &mut tk,
+            Strength::Constant(99),
+            Duration::from_millis(1),
+            vec![],
+            None,
+            &[ScalarActuator::Inflate],
+        );
+        thread::sleep(Duration::from_secs(1));
+
+        // assert
+        call_registry.get_device(2)[0].assert_strenth(0.99);
+        call_registry.get_device(2)[1].assert_strenth(0.0);
+        call_registry.assert_unused(0);
     }
 
     /// Vibrate (E2E)
@@ -648,10 +679,10 @@ mod tests {
         duration: Duration,
         vibration_pattern: bool,
     ) -> (BpClient, i32) {
-        let settings = TkSettings::new();
-        let pattern_path = String::from("../deploy/Data/SKSE/Plugins/BpClient/Patterns");
+        let settings = ClientSettings::new();
+        let pattern_path = "TODO/Define/Me";
         let mut tk =
-            BpClient::connect_with(|| async move { in_process_connector() }, Some(settings))
+            BpClient::connect_with(|| async move { in_process_connector(InProcessFeatures { bluetooth: true, serial: false, xinput: false }) }, Some(settings))
                 .unwrap();
         tk.scan_for_devices();
         tk.await_connect(1);
@@ -664,11 +695,11 @@ mod tests {
         let fscript = read_pattern(&pattern_path, pattern_name, vibration_pattern).unwrap();
         let handle = test_cmd(
             &mut tk,
-            Task::Pattern(Speed::max(), ActuatorType::Vibrate, pattern_name.into()),
+            Strength::Funscript(100, pattern_name.into()),
             duration,
             vec![],
             Some(fscript),
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
         (tk, handle)
     }
@@ -678,34 +709,34 @@ mod tests {
     #[test]
     #[ignore = "Requires intiface to be connected, with a connected device (vibrates it)"]
     fn intiface_test_vibration() {
-        let mut settings = TkSettings::new();
-        settings.connection = TkConnectionType::WebSocket(String::from("127.0.0.1:12345"));
+        let mut settings = ClientSettings::new();
+        settings.connection = ConnectionType::WebSocket(String::from("127.0.0.1:12345"));
 
         let mut tk = BpClient::connect(settings).unwrap();
         tk.scan_for_devices();
 
         thread::sleep(Duration::from_secs(5));
         assert!(tk.connection_result.is_ok());
-        for actuator in get_actuators(tk.buttplug.devices()) {
+        for actuator in tk.buttplug.devices().flatten_actuators() {
             tk.settings
                 .device_settings
                 .set_enabled(actuator.device.name(), true);
         }
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::MAX,
             vec![],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
         thread::sleep(Duration::from_secs(5));
     }
 
     #[test]
     fn intiface_not_available_connection_status_error() {
-        let mut settings = TkSettings::new();
-        settings.connection = TkConnectionType::WebSocket(String::from("bogushost:6572"));
+        let mut settings = ClientSettings::new();
+        settings.connection = ConnectionType::WebSocket(String::from("bogushost:6572"));
         let tk = BpClient::connect(settings).unwrap();
         tk.scan_for_devices();
         thread::sleep(Duration::from_secs(5));
@@ -728,11 +759,11 @@ mod tests {
             .set_events("vib1 (Vibrate)", &[String::from(" SoMe EvEnT    ")]);
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::from_millis(1),
             vec![String::from("some event")],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
 
         thread::sleep(Duration::from_millis(500));
@@ -767,7 +798,7 @@ mod tests {
 
     #[test]
     fn get_devices_contains_devices_from_settings() {
-        let mut settings = TkSettings::new();
+        let mut settings = ClientSettings::new();
         settings.device_settings.set_enabled("foreign", true);
 
         let (tk, _) = wait_for_connection(vec![], Some(settings));
@@ -819,11 +850,11 @@ mod tests {
 
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::from_millis(1),
             vec![String::from("selected_event")],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
         thread::sleep(Duration::from_secs(1));
 
@@ -844,11 +875,11 @@ mod tests {
             .set_events("vib1 (Vibrate)", &[String::from("some event")]);
         test_cmd(
             &mut tk,
-            Task::Scalar(Speed::max()),
+            Strength::Constant(100),
             Duration::from_millis(1),
             vec![String::from(" SoMe EvEnT    ")],
             None,
-            &[ActuatorType::Vibrate],
+            &[ScalarActuator::Vibrate],
         );
 
         thread::sleep(Duration::from_millis(500));
@@ -858,7 +889,7 @@ mod tests {
 
     fn wait_for_connection(
         devices: Vec<DeviceAdded>,
-        settings: Option<TkSettings>,
+        settings: Option<ClientSettings>,
     ) -> (BpClient, FakeConnectorCallRegistry) {
         let (connector, call_registry) = FakeDeviceConnector::new(devices);
         let count = connector.devices.len();
@@ -869,7 +900,7 @@ mod tests {
         let mut tk = BpClient::connect_with(|| async move { connector }, Some(settings)).unwrap();
         tk.await_connect(count);
 
-        let actuators = get_actuators(tk.buttplug.devices());
+        let actuators = tk.buttplug.devices().flatten_actuators();
         for actuator in actuators {
             tk.settings
                 .device_settings

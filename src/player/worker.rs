@@ -5,7 +5,9 @@ use tokio::{runtime::Handle, sync::mpsc::UnboundedReceiver};
 use tracing::{error, info, trace};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{access::DeviceAccess, actuator::Actuator, speed::Speed};
+use crate::{actuator::Actuator, speed::Speed};
+
+use super::access::DeviceAccess;
 
 pub type WorkerResult<T = ()> = Result<T, WorkerError>;
 

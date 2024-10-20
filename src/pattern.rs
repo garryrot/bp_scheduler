@@ -18,45 +18,6 @@ pub fn get_pattern_names(pattern_path: &str, vibration_patterns: bool) -> Vec<St
     }
 }
 
-struct TkPatternFile {
-    path: PathBuf,
-    is_vibration: bool,
-    name: String,
-}
-
-fn get_pattern_paths(pattern_path: &str) -> Result<Vec<TkPatternFile>, anyhow::Error> {
-    let mut patterns = vec![];
-    let pattern_dir = fs::read_dir(pattern_path)?;
-    for entry in pattern_dir {
-        let file = entry?;
-
-        let path = file.path();
-        let path_clone = path.clone();
-        let file_name = path
-            .file_name()
-            .ok_or_else(|| anyhow!("No file name"))?
-            .to_str()
-            .ok_or_else(|| anyhow!("Invalid unicode"))?;
-        if !file_name.to_lowercase().ends_with(".funscript") {
-            continue;
-        }
-
-        let is_vibration = file_name.to_lowercase().ends_with(".vibrator.funscript");
-        let removal: usize = if is_vibration {
-            file_name.len() - ".vibrator.funscript".len()
-        } else {
-            file_name.len() - ".funscript".len()
-        };
-
-        patterns.push(TkPatternFile {
-            path: path_clone,
-            is_vibration,
-            name: String::from(&file_name[0..removal]),
-        })
-    }
-    Ok(patterns)
-}
-
 pub fn read_pattern(
     pattern_path: &str,
     pattern_name: &str,
@@ -80,7 +41,7 @@ pub fn read_pattern_name(
     vibration_pattern: bool,
 ) -> Result<FScript, anyhow::Error> {
     let now = Instant::now();
-    let patterns: Vec<TkPatternFile> = get_pattern_paths(pattern_path)?;
+    let patterns = get_pattern_paths(pattern_path)?;
     let pattern = patterns
         .iter()
         .find(|d| {
@@ -92,4 +53,43 @@ pub fn read_pattern_name(
     let fs = funscript::load_funscript(pattern.path.to_str().unwrap())?;
     debug!("Read pattern {} in {:?}", pattern_name, now.elapsed());
     Ok(fs)
+}
+
+fn get_pattern_paths(pattern_path: &str) -> Result<Vec<PatternIntern>, anyhow::Error> {
+    let mut patterns = vec![];
+    let pattern_dir = fs::read_dir(pattern_path)?;
+    for entry in pattern_dir {
+        let file = entry?;
+
+        let path = file.path();
+        let path_clone = path.clone();
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| anyhow!("No file name"))?
+            .to_str()
+            .ok_or_else(|| anyhow!("Invalid unicode"))?;
+        if !file_name.to_lowercase().ends_with(".funscript") {
+            continue;
+        }
+
+        let is_vibration = file_name.to_lowercase().ends_with(".vibrator.funscript");
+        let removal: usize = if is_vibration {
+            file_name.len() - ".vibrator.funscript".len()
+        } else {
+            file_name.len() - ".funscript".len()
+        };
+
+        patterns.push(PatternIntern {
+            path: path_clone,
+            is_vibration,
+            name: String::from(&file_name[0..removal]),
+        })
+    }
+    Ok(patterns)
+}
+
+struct PatternIntern {
+    path: PathBuf,
+    is_vibration: bool,
+    name: String,
 }

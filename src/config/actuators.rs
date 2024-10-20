@@ -4,29 +4,44 @@ use tracing::{debug, error, instrument};
 
 use buttplug::core::message::ActuatorType;
 
-use crate::actuator::Actuator;
+use crate::{actuator::Actuator, util::trim_lower_str_list};
 
 use super::{
     linear::{LinearRange, LinearSpeedScaling}, 
     scalar::ScalarRange, ActuatorSettings
 };
 
+/// actuator sepcific settings
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BpSettings {
-    pub devices: Vec<BpDeviceSettings>
+    pub devices: Vec<BpActuatorSettings>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BpActuatorSettings {
+    pub actuator_id: String,
+
+    /// if the actuator should be used
+    pub enabled: bool,
+
+    /// body parts associated with this actuator
+    pub body_parts: Vec<String>,
+
+    #[serde(default = "ActuatorSettings::default")]
+    pub actuator_settings: ActuatorSettings,
 }
 
 impl BpSettings {
-    pub fn get_enabled_devices(&self) -> Vec<BpDeviceSettings> {
+    pub fn get_enabled_devices(&self) -> Vec<BpActuatorSettings> {
         self.devices.iter().filter(|d| d.enabled).cloned().collect()
     }
 
-    pub fn get_or_create(&mut self, actuator_id: &str) -> BpDeviceSettings {
+    pub fn get_or_create(&mut self, actuator_id: &str) -> BpActuatorSettings {
         let device = self.get_device(actuator_id);
         match device {
             Some(setting) => setting,
             None => {
-                let device = BpDeviceSettings::from_identifier(actuator_id);
+                let device = BpActuatorSettings::from_identifier(actuator_id);
                 self.update_device(device.clone());
                 device
             },
@@ -40,7 +55,7 @@ impl BpSettings {
         ActuatorSettings::None
     }
 
-    pub fn get_or_create_linear(&mut self, actuator_id: &str) -> (BpDeviceSettings, LinearRange) {
+    pub fn get_or_create_linear(&mut self, actuator_id: &str) -> (BpActuatorSettings, LinearRange) {
         let mut device = self.get_or_create(actuator_id);
         if let ActuatorSettings::Scalar(ref scalar) = device.actuator_settings {
             error!("actuator {:?} is scalar but assumed linear... dropping all {:?}", actuator_id, scalar)
@@ -54,7 +69,7 @@ impl BpSettings {
         (device, default)
     }
 
-    pub fn get_or_create_scalar(&mut self, actuator_id: &str) -> (BpDeviceSettings, ScalarRange) {
+    pub fn get_or_create_scalar(&mut self, actuator_id: &str) -> (BpActuatorSettings, ScalarRange) {
         let mut device = self.get_or_create(actuator_id);
         if let ActuatorSettings::Linear(ref linear) = device.actuator_settings {
             error!("actuator {:?} is linear but assumed scalar... dropping all {:?}", actuator_id, linear)
@@ -89,7 +104,7 @@ impl BpSettings {
         result
     }
    
-    pub fn update_device(&mut self, setting: BpDeviceSettings)
+    pub fn update_device(&mut self, setting: BpActuatorSettings)
     {
         let insert_pos = self.devices.iter().find_position(|x| x.actuator_id == setting.actuator_id);
         if let Some((pos, _)) = insert_pos {
@@ -99,7 +114,7 @@ impl BpSettings {
         }
     }
 
-    pub fn get_device(&self, actuator_id: &str) -> Option<BpDeviceSettings> {
+    pub fn get_device(&self, actuator_id: &str) -> Option<BpActuatorSettings> {
          self.devices
                 .iter()
                 .find(|d| d.actuator_id == actuator_id)
@@ -120,12 +135,12 @@ impl BpSettings {
         debug!("set_events");
 
         let mut device = self.get_or_create(actuator_id);
-        device.events = sanitize_name_list(events);
+        device.body_parts = trim_lower_str_list(events);
         self.update_device(device);
     }
 
     pub fn get_events(&mut self, actuator_id: &str) -> Vec<String> {
-        self.get_or_create(actuator_id).events
+        self.get_or_create(actuator_id).body_parts
     }
 
     pub fn get_enabled(&mut self, actuator_id: &str) -> bool {
@@ -133,36 +148,21 @@ impl BpSettings {
     }
 }
 
-pub fn sanitize_name_list(list: &[String]) -> Vec<String> {
-    list.iter()
-        .map(|e| e.to_lowercase().trim().to_owned())
-        .collect()
-}
 
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BpDeviceSettings {
-    pub actuator_id: String,
-    pub enabled: bool,
-    pub events: Vec<String>,
-    #[serde(default = "ActuatorSettings::default")]
-    pub actuator_settings: ActuatorSettings,
-}
-
-impl BpDeviceSettings {
-    pub fn from_identifier(actuator_id: &str) -> BpDeviceSettings {
-        BpDeviceSettings {
+impl BpActuatorSettings {
+    pub fn from_identifier(actuator_id: &str) -> BpActuatorSettings {
+        BpActuatorSettings {
             actuator_id: actuator_id.into(),
             enabled: false,
-            events: vec![],
+            body_parts: vec![],
             actuator_settings: ActuatorSettings::None,
         }
     }
-    pub fn from_actuator(actuator: &Actuator) -> BpDeviceSettings {
-        BpDeviceSettings {
+    pub fn from_actuator(actuator: &Actuator) -> BpActuatorSettings {
+        BpActuatorSettings {
             actuator_id: actuator.identifier().into(),
             enabled: false,
-            events: vec![],
+            body_parts: vec![],
             actuator_settings: match actuator.actuator {
                 ActuatorType::Vibrate
                 | ActuatorType::Rotate

@@ -1,27 +1,28 @@
-use actuator::Actuator;
-use player::PatternPlayer;
-use config::*;
-use speed::Speed;
-use std::collections::HashMap;
-use worker::{ButtplugWorker, WorkerResult, WorkerTask};
+use std::{sync::Arc, time::Duration, collections::HashMap};
 
-use std::{sync::Arc, time::Duration};
 use tokio::{
     sync::mpsc::{unbounded_channel, UnboundedSender},
     time::sleep,
 };
-use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
+use tokio_util::sync::CancellationToken;
+
+mod util;
 pub mod actuator;
 pub mod player;
 pub mod speed;
-pub mod config;
+pub mod pattern;
+pub mod config; 
 pub mod client;
 pub mod dynamic_tracking;
 
-mod access;
-mod worker;
+use config::*;
+use speed::Speed;
+use actuator::Actuator;
+
+use player::worker::{ButtplugWorker, WorkerResult, WorkerTask};
+use player::PatternPlayer;
 
 #[derive(Debug)]
 pub struct ButtplugScheduler {
@@ -186,7 +187,7 @@ mod tests {
     use tokio::task::JoinHandle;
     use tokio::time::timeout;
 
-    use crate::client::status::get_actuators;
+    use crate::actuator::Actuators;
     use crate::player::PatternPlayer;
     use crate::config::*;
     use crate::config::linear::*;
@@ -236,7 +237,7 @@ mod tests {
         ) {
             let actuators = match actuators {
                 Some(actuators) => actuators,
-                None => get_actuators(self.all_devices.clone()),
+                None => self.all_devices.clone().flatten_actuators(),
             };
             let player: super::PatternPlayer = self.scheduler.create_player(actuators, -1);
             player
@@ -253,7 +254,7 @@ mod tests {
         ) {
             let actuators = match actuators {
                 Some(actuators) => actuators,
-                None => get_actuators(self.all_devices.clone()),
+                None => self.all_devices.clone().flatten_actuators(),
             };
             let player = self.scheduler.create_player(actuators, -1);
             self.handles.push(Handle::current().spawn(async move {
@@ -263,17 +264,17 @@ mod tests {
 
         fn get_player(&mut self) -> PatternPlayer {
             self.scheduler
-                .create_player(get_actuators(self.all_devices.clone()), -1 )
+                .create_player(self.all_devices.clone().flatten_actuators(), -1 )
         }
 
         fn get_player_with_settings(&mut self, settings: Vec<ActuatorSettings>, handle: i32) -> PatternPlayer {
-            self.scheduler.create_player_with_settings(get_actuators(self.all_devices.clone()), settings, handle)
+            self.scheduler.create_player_with_settings(self.all_devices.clone().flatten_actuators(), settings, handle)
         }
 
         async fn play_linear(&mut self, funscript: FScript, duration: Duration) {
             let player = self
                 .scheduler
-                .create_player(get_actuators(self.all_devices.clone()), -1);
+                .create_player(self.all_devices.clone().flatten_actuators(), -1);
             player
                 .play_linear(duration, funscript)
                 .await
@@ -571,7 +572,7 @@ mod tests {
         // arrange
         let client = get_test_client(vec![scalars(1, "vib1", ActuatorType::Vibrate, 2)]).await;
         let mut player = PlayerTest::setup(&client.created_devices);
-        let actuators = get_actuators(client.created_devices.clone());
+        let actuators = client.created_devices.clone().flatten_actuators();
 
         // act
         let start = Instant::now();
@@ -905,12 +906,12 @@ mod tests {
         player.play_scalar(
             Duration::from_millis(300),
             Speed::new(99),
-            Some(get_actuators(vec![client.get_device(1)])),
+            Some(vec![client.get_device(1)].flatten_actuators()),
         );
         player.play_scalar(
             Duration::from_millis(200),
             Speed::new(88),
-            Some(get_actuators(vec![client.get_device(2)])),
+            Some(vec![client.get_device(2)].flatten_actuators()),
         );
 
         player.await_all().await;
