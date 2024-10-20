@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use buttplug::client::ButtplugClientDevice;
+use derive_new::new;
 use tokio::{sync::mpsc::UnboundedReceiver, time::Instant};
 
 pub mod movements;
@@ -8,18 +9,10 @@ pub mod collision;
 pub mod tracking_mirror;
 pub mod util;
 
+#[derive(new)]
 pub struct Margins {
     most_in: f64,
     most_out: f64
-}
-
-impl Margins {
-    pub fn new( most_in: f64, most_out: f64) -> Self {
-        Margins {
-            most_in,
-            most_out,
-        }
-    }
 }
 
 pub enum TrackingSignal {

@@ -28,16 +28,14 @@ use buttplug::{
 };
 use util::trim_lower_str_list;
 
+use crate::filter::Filter;
 use crate::*;
-
-pub mod filter;
 
 use config::client::*;
 use read::read_config;
 use pattern::read_pattern;
 use actions::*;
 use config::linear::*;
-use filter::*;
 
 #[cfg(feature = "testing")]
 use bp_fakes::FakeDeviceConnector;
@@ -277,14 +275,13 @@ impl BpClient {
             .with_actuator_types(&control.get_actuators())
             .with_body_parts(&trim_lower_str_list(&body_parts))
             .result();
+
         self.settings.device_settings = updated_settings;
-
         let pattern_path = self.settings.pattern_path.clone();
-
 
         let player = self
             .scheduler
-            .create_player_with_settings(actuators.load_config(&mut self.settings.device_settings), handle);
+            .create_player(actuators.load_config(&mut self.settings.device_settings), handle);
         let handle = player.handle;
         info!(
             handle,

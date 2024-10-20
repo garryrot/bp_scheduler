@@ -8,14 +8,15 @@ use tracing::{debug, error};
 
 use tokio_util::sync::CancellationToken;
 
-mod util;
 pub mod actuator;
-pub mod player;
-pub mod speed;
-pub mod pattern;
-pub mod config; 
 pub mod client;
+pub mod config; 
 pub mod dynamic_tracking;
+pub mod player;
+pub mod pattern;
+pub mod speed;
+pub mod filter;
+mod util;
 
 use config::*;
 use speed::Speed;
@@ -58,10 +59,6 @@ impl ButtplugScheduler {
     }
 
     pub fn create_player(&mut self, actuators: Vec<Arc<Actuator>>, existing_handle: i32) -> PatternPlayer {
-        self.create_player_with_settings(actuators, existing_handle)
-    }
-
-    pub fn create_player_with_settings(&mut self, actuators: Vec<Arc<Actuator>>, existing_handle: i32) -> PatternPlayer {
         let (update_sender, update_receiver) = unbounded_channel::<Speed>();
         let cancellation_token = CancellationToken::new();
         let mut handle = existing_handle;
@@ -83,19 +80,18 @@ impl ButtplugScheduler {
                 }],
             );
         }
-
         let (result_sender, result_receiver) =
             unbounded_channel::<WorkerResult>();
-        PatternPlayer {
+        PatternPlayer::new(
+            handle,
             actuators,
             result_sender,
             result_receiver,
             update_receiver,
-            handle,
             cancellation_token,
-            worker_task_sender: self.worker_task_sender.clone(),
-            scalar_resolution_ms: self.settings.scalar_resolution_ms,
-        }
+            self.worker_task_sender.clone(),
+            self.settings.scalar_resolution_ms,
+        )
     }
 
     pub fn update_task(&mut self, handle: i32, speed: Speed) -> bool {
@@ -266,7 +262,7 @@ mod tests {
         }
 
         fn get_player_with_settings(&mut self, handle: i32) -> PatternPlayer {
-            self.scheduler.create_player_with_settings(self.actuators.clone(), handle)
+            self.scheduler.create_player(self.actuators.clone(), handle)
         }
 
         async fn play_linear(&mut self, funscript: FScript, duration: Duration) {

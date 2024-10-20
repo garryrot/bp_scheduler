@@ -1,3 +1,4 @@
+use derive_new::new;
 use funscript::FScript;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -12,29 +13,27 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument, trace};
 
 use crate::{
-    actuator::Actuator, 
-    cancellable_wait, 
-    config::linear::{
-        LinearRange, 
-        LinearSpeedScaling
-    }, 
-    speed::Speed, 
-    ActuatorLimits
+    actuator::Actuator,
+    cancellable_wait,
+    config::linear::{LinearRange, LinearSpeedScaling},
+    speed::Speed,
+    ActuatorLimits,
 };
 
 pub mod access;
 pub mod worker;
 
 /// Pattern executor that can be passed from the schedulers main-thread to a sub-thread
+#[derive(new)]
 pub struct PatternPlayer {
     pub handle: i32,
-    pub scalar_resolution_ms: i32,
     pub actuators: Vec<Arc<Actuator>>,
-    pub result_sender: UnboundedSender<WorkerResult>,
-    pub result_receiver: UnboundedReceiver<WorkerResult>,
-    pub update_receiver: UnboundedReceiver<Speed>,
-    pub cancellation_token: CancellationToken,
-    pub worker_task_sender: UnboundedSender<WorkerTask>,
+    result_sender: UnboundedSender<WorkerResult>,
+    result_receiver: UnboundedReceiver<WorkerResult>,
+    update_receiver: UnboundedReceiver<Speed>,
+    cancellation_token: CancellationToken,
+    worker_task_sender: UnboundedSender<WorkerTask>,
+    scalar_resolution_ms: i32,
 }
 
 impl PatternPlayer {
@@ -42,7 +41,7 @@ impl PatternPlayer {
         mut self,
         duration: Duration,
         speed: Speed,
-        settings: LinearRange
+        settings: LinearRange,
     ) -> WorkerResult {
         debug!(?settings, "oscillation started");
         let waiter = self.stop_after(duration);
@@ -63,11 +62,7 @@ impl PatternPlayer {
 
     /// Executes the linear 'fscript' for 'duration' and consumes the player
     #[instrument(skip(fscript))]
-    pub async fn play_linear(
-        mut self,
-        duration: Duration,
-        fscript: FScript,
-    ) -> WorkerResult {
+    pub async fn play_linear(mut self, duration: Duration, fscript: FScript) -> WorkerResult {
         info!("linear pattern started");
         let mut last_result = Ok(());
         if fscript.actions.is_empty() || fscript.actions.iter().all(|x| x.at == 0) {
@@ -252,7 +247,12 @@ impl PatternPlayer {
         self.result_receiver.recv().await.unwrap()
     }
 
-    async fn do_stroke(&mut self, start: bool, mut speed: Speed, settings: &LinearRange) -> WorkerResult {
+    async fn do_stroke(
+        &mut self,
+        start: bool,
+        mut speed: Speed,
+        settings: &LinearRange,
+    ) -> WorkerResult {
         let mut wait_ms = 0;
         for actuator in &self.actuators {
             let actual_settings = settings.merge(&actuator.get_config().limits.linear_or_max());
@@ -295,30 +295,66 @@ impl PatternPlayer {
 }
 
 impl LinearRange {
-    fn merge(&self, settings: &LinearRange) -> LinearRange {   
+    fn merge(&self, settings: &LinearRange) -> LinearRange {
         LinearRange {
-            min_ms: if self.min_ms < settings.min_ms { settings.min_ms } else { self.min_ms },
-            max_ms: if self.max_ms > settings.max_ms { settings.max_ms } else { self.max_ms },
-            min_pos: if self.min_pos < settings.min_pos { settings.min_pos } else { self.min_pos },
-            max_pos: if self.max_pos > settings.max_pos { settings.max_pos } else { self.max_pos },
-            invert: if settings.invert { ! self.invert } else { self.invert },
+            min_ms: if self.min_ms < settings.min_ms {
+                settings.min_ms
+            } else {
+                self.min_ms
+            },
+            max_ms: if self.max_ms > settings.max_ms {
+                settings.max_ms
+            } else {
+                self.max_ms
+            },
+            min_pos: if self.min_pos < settings.min_pos {
+                settings.min_pos
+            } else {
+                self.min_pos
+            },
+            max_pos: if self.max_pos > settings.max_pos {
+                settings.max_pos
+            } else {
+                self.max_pos
+            },
+            invert: if settings.invert {
+                !self.invert
+            } else {
+                self.invert
+            },
             scaling: match settings.scaling {
                 LinearSpeedScaling::Linear => match self.scaling {
                     LinearSpeedScaling::Linear => LinearSpeedScaling::Linear,
                     LinearSpeedScaling::Parabolic(n) => LinearSpeedScaling::Parabolic(n),
                 },
-                LinearSpeedScaling::Parabolic(n) =>  LinearSpeedScaling::Parabolic(n),
+                LinearSpeedScaling::Parabolic(n) => LinearSpeedScaling::Parabolic(n),
             },
         }
     }
     pub fn get_pos(&self, move_up: bool) -> f64 {
         match move_up {
-            true => if self.invert { 1.0 - self.max_pos } else { self.max_pos },
-            false => if self.invert { 1.0 - self.min_pos } else { self.min_pos }
+            true => {
+                if self.invert {
+                    1.0 - self.max_pos
+                } else {
+                    self.max_pos
+                }
+            }
+            false => {
+                if self.invert {
+                    1.0 - self.min_pos
+                } else {
+                    self.min_pos
+                }
+            }
         }
     }
     pub fn apply_pos(&self, pos: f64) -> f64 {
-        if self.invert { 1.0 - pos } else { pos }
+        if self.invert {
+            1.0 - pos
+        } else {
+            pos
+        }
     }
     pub fn get_duration_ms(&self, speed: Speed) -> u32 {
         let factor = (100 - speed.value) as f64 / 100.0;
@@ -342,7 +378,7 @@ fn apply_scalar_settings(speed: Speed, settings: &ActuatorLimits) -> Speed {
             } else {
                 speed
             }
-        },
+        }
         _ => speed,
     }
 }
