@@ -479,7 +479,7 @@ mod tests {
         _: Option<FScript>,
         actuators: &[ScalarActuator],
     ) -> i32 {
-        tk.actions = Actions(vec![Action::build(
+        tk.actions = Actions(vec![Action::new(
             "foobar",
             vec![Control::Scalar(
                 Selector::All,
@@ -679,7 +679,7 @@ mod tests {
         duration: Duration,
         vibration_pattern: bool,
     ) -> (BpClient, i32) {
-        let settings = ClientSettings::new();
+        let settings = ClientSettings::default();
         let pattern_path = "TODO/Define/Me";
         let mut tk =
             BpClient::connect_with(|| async move { in_process_connector(InProcessFeatures { bluetooth: true, serial: false, xinput: false }) }, Some(settings))
@@ -709,7 +709,7 @@ mod tests {
     #[test]
     #[ignore = "Requires intiface to be connected, with a connected device (vibrates it)"]
     fn intiface_test_vibration() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.connection = ConnectionType::WebSocket(String::from("127.0.0.1:12345"));
 
         let mut tk = BpClient::connect(settings).unwrap();
@@ -735,8 +735,7 @@ mod tests {
 
     #[test]
     fn intiface_not_available_connection_status_error() {
-        let mut settings = ClientSettings::new();
-        settings.connection = ConnectionType::WebSocket(String::from("bogushost:6572"));
+        let settings = ClientSettings { connection: ConnectionType::WebSocket(String::from("bogushost:6572")), ..Default::default() };
         let tk = BpClient::connect(settings).unwrap();
         tk.scan_for_devices();
         thread::sleep(Duration::from_secs(5));
@@ -798,7 +797,7 @@ mod tests {
 
     #[test]
     fn get_devices_contains_devices_from_settings() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.set_enabled("foreign", true);
 
         let (tk, _) = wait_for_connection(vec![], Some(settings));

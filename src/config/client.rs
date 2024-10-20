@@ -29,9 +29,9 @@ pub struct ClientSettings {
     pub action_path: String,
 }
 
-impl ClientSettings {
-    pub fn new() -> Self {
-        ClientSettings {
+impl Default for ClientSettings {
+    fn default() -> Self {
+        Self {
             version: 3,
             log_level: LogLevel::Debug,
             connection: ConnectionType::InProcess,
@@ -47,7 +47,9 @@ impl ClientSettings {
             },
         }
     }
+}
 
+impl ClientSettings {
     pub fn try_read_or_default(settings_path: &str, settings_file: &str) -> Self {
         Self::try_read_or( settings_path, settings_file, ClientSettings::default() )
     }
@@ -85,12 +87,6 @@ impl ClientSettings {
     }
 }
 
-impl Default for ClientSettings {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Display for ConnectionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -112,7 +108,7 @@ pub(crate) mod settings_tests {
     #[test]
     fn serialize_deserialize_works() {
         // Arrange
-        let mut setting = ClientSettings::new();
+        let mut setting = ClientSettings::default();
 
         // Act
         setting.device_settings.devices.push(BpActuatorSettings::from_identifier("value"));
@@ -129,7 +125,7 @@ pub(crate) mod settings_tests {
     #[test]
     fn file_existing_returns_parsed_content() {
         // Arrange
-        let mut setting = ClientSettings::new();
+        let mut setting = ClientSettings::default();
         setting.device_settings.devices.push(BpActuatorSettings::from_identifier("a"));
         setting.device_settings.devices.push(BpActuatorSettings::from_identifier("b"));
         setting.device_settings.devices.push(BpActuatorSettings::from_identifier("c"));
@@ -164,7 +160,7 @@ pub(crate) mod settings_tests {
 
     #[test]
     fn adds_every_device_only_once() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.get_or_create("a");
         settings.device_settings.get_or_create("a");
         assert_eq!(settings.device_settings.devices.len(), 1);
@@ -172,7 +168,7 @@ pub(crate) mod settings_tests {
 
     #[test]
     fn enable_and_disable_devices() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.get_or_create("a");
         settings.device_settings.get_or_create("b");
         settings.device_settings.set_enabled("a", true);
@@ -186,7 +182,7 @@ pub(crate) mod settings_tests {
 
     #[test]
     fn enable_multiple_devices() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.get_or_create("a");
         settings.device_settings.get_or_create("b");
         settings.device_settings.set_enabled("a", true);
@@ -196,21 +192,21 @@ pub(crate) mod settings_tests {
 
     #[test]
     fn enable_unknown_device() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.set_enabled("foobar", true);
         assert_eq!(settings.device_settings.get_enabled_devices()[0].actuator_id, "foobar");
     }
 
     #[test]
     fn is_enabled_false() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.get_or_create("a");
         assert!(!settings.device_settings.get_enabled("a"));
     }
 
     #[test]
     fn is_enabled_true() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.get_or_create("a");
         settings.device_settings.set_enabled("a", true);
         assert!(settings.device_settings.get_enabled("a"));
@@ -218,7 +214,7 @@ pub(crate) mod settings_tests {
 
     #[test]
     fn write_to_temp_file() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         settings.device_settings.get_or_create("foobar");
 
         // act
@@ -235,7 +231,7 @@ pub(crate) mod settings_tests {
 
     #[test]
     fn set_valid_websocket_endpoint() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         let endpoint = String::from("3.44.33.6:12345");
         settings.connection = ConnectionType::WebSocket(endpoint);
         if let ConnectionType::WebSocket(endpoint) = settings.connection {
@@ -247,7 +243,7 @@ pub(crate) mod settings_tests {
 
     #[test]
     fn set_valid_websocket_endpoint_hostname() {
-        let mut settings = ClientSettings::new();
+        let mut settings = ClientSettings::default();
         let endpoint = String::from("localhost:12345");
         settings.connection = ConnectionType::WebSocket(endpoint);
         if let ConnectionType::WebSocket(endpoint) = settings.connection {

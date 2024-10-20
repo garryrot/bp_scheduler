@@ -64,14 +64,10 @@ pub struct Action {
 }
 
 impl Action {
-    pub fn build(name: &str, controls: Vec<Control>) -> Self {
-        let mut selectors = vec![];
-        for control in controls {
-            selectors.push(control);
-        }
+    pub fn new(name: &str, control: Vec<Control>) -> Self {
         Action {
             name: name.into(),
-            control: selectors,
+            control,
         }
     }
 }
@@ -171,7 +167,7 @@ mod tests {
 
     #[test]
     pub fn build_mm_actions() {
-        let actions = vec![Action::build(
+        let actions = vec![Action::new(
             "milkmod.milkingstage",
             vec![
                 Control::Scalar(
@@ -198,8 +194,8 @@ mod tests {
     #[test]
     pub fn serialize_and_deserialize_actions() {
         let a1 = Actions(vec![
-            Action::build("1", vec![Control::Scalar(Selector::All, vec![])]),
-            Action::build(
+            Action::new("1", vec![Control::Scalar(Selector::All, vec![])]),
+            Action::new(
                 "2",
                 vec![Control::Scalar(
                     Selector::All,
@@ -209,14 +205,14 @@ mod tests {
         ]);
         let s1 = serde_json::to_string_pretty(&a1).unwrap();
         let a2 = Actions(vec![
-            Action::build(
+            Action::new(
                 "3",
                 vec![Control::Scalar(
                     Selector::All,
                     vec![ScalarActuator::Constrict],
                 )],
             ),
-            Action::build(
+            Action::new(
                 "4",
                 vec![Control::Scalar(
                     Selector::All,
