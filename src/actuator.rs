@@ -1,14 +1,17 @@
 use buttplug::client::ButtplugClientDevice;
 use buttplug::core::message::ActuatorType;
 use std::{
-    fmt::{self, Display}, sync::Arc
+    fmt::{self, Display}, ops::Deref, sync::Arc
 };
+
+use crate::actuators::{ActuatorConfig, ActuatorSettings};
 
 #[derive(Clone)]
 pub struct Actuator {
     pub device: Arc<ButtplugClientDevice>,
     pub actuator: ActuatorType,
     pub index_in_device: u32,
+    pub config: Option<ActuatorConfig>,
     identifier: String,
 }
 
@@ -24,6 +27,7 @@ impl Actuator {
             actuator,
             index_in_device: index_in_device as u32,
             identifier,
+            config: None
         }
     }
 
@@ -42,6 +46,12 @@ impl Actuator {
         format!("{} ({})", device.name(), actuator)
     }
 
+    pub fn get_config(&self) -> ActuatorConfig {
+        match &self.config {
+            Some(cfg) => cfg.clone(),
+            None => ActuatorConfig::default() // panic!("actuator config not loaded: {:?}", self), // TODO Return default
+        }
+    }
 
 }
 
@@ -63,7 +73,7 @@ pub trait Actuators {
 
 impl Actuators for Vec<Arc<ButtplugClientDevice>> {
     fn flatten_actuators(&self) -> Vec<Arc<Actuator>> {
-        self.iter().map(|x| x.flatten_actuators()).flatten().collect()
+        self.iter().flat_map(|x| x.flatten_actuators()).collect()
     }
 }
 
@@ -86,5 +96,20 @@ impl Actuators for &Arc<ButtplugClientDevice> {
             }
         }
         actuators.into_iter().map(Arc::new).collect()
+    }
+}
+
+pub trait ActuatorConfigLoader {
+    fn load_config(self, config: &mut ActuatorSettings) -> Vec<Arc<Actuator>>;
+}
+
+impl ActuatorConfigLoader for Vec<Arc<Actuator>> {
+    fn load_config(self, config: &mut ActuatorSettings) -> Vec<Arc<Actuator>> {
+        self.into_iter().map(|act| { 
+            Arc::new(Actuator {
+                config: Some(config.get_or_create(&act.identifier)),
+                .. act.deref().clone()
+            })
+        } ).collect()
     }
 }

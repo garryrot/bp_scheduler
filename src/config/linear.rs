@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::speed::Speed;
 
-use super::ActuatorSettings;
+use super::ActuatorLimits;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum LinearSpeedScaling {
@@ -59,9 +59,9 @@ impl Default for LinearRange {
     }
 }
 
-impl ActuatorSettings {
+impl ActuatorLimits {
     pub fn linear_or_max(&self) -> LinearRange {
-        if let ActuatorSettings::Linear(settings) = self {
+        if let ActuatorLimits::Linear(settings) = self {
             return settings.clone();
         }
         LinearRange::max()

@@ -4,6 +4,7 @@ use std::{
     time::Instant,
 };
 
+use actuator::ActuatorConfigLoader;
 use anyhow::anyhow;
 use anyhow::Error;
 
@@ -30,7 +31,6 @@ use util::trim_lower_str_list;
 use crate::*;
 
 pub mod filter;
-pub mod status;
 
 use config::client::*;
 use read::read_config;
@@ -281,19 +281,10 @@ impl BpClient {
 
         let pattern_path = self.settings.pattern_path.clone();
 
-        let settings = actuators
-            .iter()
-            .map(|x| {
-                self.settings
-                    .device_settings
-                    .get_or_create(x.identifier())
-                    .actuator_settings
-            })
-            .collect();
 
         let player = self
             .scheduler
-            .create_player_with_settings(actuators, settings, handle);
+            .create_player_with_settings(actuators.load_config(&mut self.settings.device_settings), handle);
         let handle = player.handle;
         info!(
             handle,
@@ -440,10 +431,11 @@ impl fmt::Debug for BpClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::client::status::get_known_actuator_ids;
     use actuator::Actuators;
+    use buttplug::client::ButtplugClientDevice;
     use buttplug::core::message::{ActuatorType, DeviceAdded};
     use funscript::FScript;
+    use itertools::Itertools;
     use pattern::read_pattern;
     use std::time::Instant;
     use std::{thread, time::Duration, vec};
@@ -906,5 +898,22 @@ mod tests {
                 .set_enabled(actuator.identifier(), true);
         }
         (tk, call_registry)
+    }
+
+    fn get_known_actuator_ids(devices: Vec<Arc<ButtplugClientDevice>>, settings: &ClientSettings) -> Vec<String> {
+        let known_actuators : Vec<String> = settings
+                .device_settings
+                .devices
+                .iter()
+                .map(|x| x.actuator_id.clone())
+                .collect();
+    
+        let known_ids = known_actuators.clone();
+        devices.flatten_actuators()
+            .iter()
+            .map(|x| String::from(x.identifier()))
+            .chain(known_ids)
+            .unique()
+            .collect()
     }
 }

@@ -144,7 +144,6 @@ mod tests {
         let (sender, receiver) = unbounded_channel::<TrackingSignal>();
         let tracking = DynamicTracking {
             settings: DynamicSettings {
-                boundaries: LinearRange::max(),
                 move_at_start: false,
                 min_resolution_ms: 50,
                 min_duration_ms: 200,

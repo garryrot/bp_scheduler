@@ -12,7 +12,7 @@ pub mod read;
 pub mod scalar;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub enum ActuatorSettings {
+pub enum ActuatorLimits {
     #[default]
     None,
     Scalar(ScalarRange),

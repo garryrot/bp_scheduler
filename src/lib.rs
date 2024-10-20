@@ -58,11 +58,10 @@ impl ButtplugScheduler {
     }
 
     pub fn create_player(&mut self, actuators: Vec<Arc<Actuator>>, existing_handle: i32) -> PatternPlayer {
-        let empty_settings = actuators.iter().map(|_| ActuatorSettings::None).collect::<Vec<ActuatorSettings>>();
-        self.create_player_with_settings(actuators, empty_settings, existing_handle)
+        self.create_player_with_settings(actuators, existing_handle)
     }
 
-    pub fn create_player_with_settings(&mut self, actuators: Vec<Arc<Actuator>>, actuator_limits: Vec<ActuatorSettings>, existing_handle: i32) -> PatternPlayer {
+    pub fn create_player_with_settings(&mut self, actuators: Vec<Arc<Actuator>>, existing_handle: i32) -> PatternPlayer {
         let (update_sender, update_receiver) = unbounded_channel::<Speed>();
         let cancellation_token = CancellationToken::new();
         let mut handle = existing_handle;
@@ -89,7 +88,6 @@ impl ButtplugScheduler {
             unbounded_channel::<WorkerResult>();
         PatternPlayer {
             actuators,
-            actuator_limits,
             result_sender,
             result_receiver,
             update_receiver,
@@ -177,6 +175,7 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use actuators::{ActuatorConfig, ActuatorSettings};
     use funscript::{FSPoint, FScript};
     use futures::future::join_all;
 
@@ -187,7 +186,7 @@ mod tests {
     use tokio::task::JoinHandle;
     use tokio::time::timeout;
 
-    use crate::actuator::Actuators;
+    use crate::actuator::{ActuatorConfigLoader, Actuators};
     use crate::player::PatternPlayer;
     use crate::config::*;
     use crate::config::linear::*;
@@ -200,13 +199,22 @@ mod tests {
     struct PlayerTest {
         pub scheduler: ButtplugScheduler,
         pub handles: Vec<JoinHandle<()>>,
-        pub all_devices: Vec<Arc<ButtplugClientDevice>>,
+        pub actuators: Vec<Arc<Actuator>>,
     }
 
     impl PlayerTest {
-        fn setup(all_devices: &[Arc<ButtplugClientDevice>]) -> Self {
+        fn setup_no_settings(devices: &Vec<Arc<ButtplugClientDevice>>) -> Self {
             PlayerTest::setup_with_settings(
-                all_devices,
+                devices.flatten_actuators().clone(),
+                PlayerSettings {
+                    scalar_resolution_ms: 1,
+                },
+            )
+        }
+
+        fn setup(actuators: Vec<Arc<Actuator>>) -> Self {
+            PlayerTest::setup_with_settings(
+                actuators,
                 PlayerSettings {
                     scalar_resolution_ms: 1,
                 },
@@ -214,7 +222,7 @@ mod tests {
         }
 
         fn setup_with_settings(
-            all_devices: &[Arc<ButtplugClientDevice>],
+            actuators: Vec<Arc<Actuator>>,
             settings: PlayerSettings,
         ) -> Self {
             let (scheduler, mut worker) = ButtplugScheduler::create(settings);
@@ -224,7 +232,7 @@ mod tests {
             PlayerTest {
                 scheduler,
                 handles: vec![],
-                all_devices: all_devices.to_owned(),
+                actuators,
             }
         }
 
@@ -232,14 +240,9 @@ mod tests {
             &mut self,
             duration: Duration,
             fscript: FScript,
-            speed: Speed,
-            actuators: Option<Vec<Arc<Actuator>>>,
+            speed: Speed
         ) {
-            let actuators = match actuators {
-                Some(actuators) => actuators,
-                None => self.all_devices.clone().flatten_actuators(),
-            };
-            let player: super::PatternPlayer = self.scheduler.create_player(actuators, -1);
+            let player: super::PatternPlayer = self.scheduler.create_player(self.actuators.clone(), -1);
             player
                 .play_scalar_pattern(duration, fscript, speed)
                 .await
@@ -249,14 +252,9 @@ mod tests {
         fn play_scalar(
             &mut self,
             duration: Duration,
-            speed: Speed,
-            actuators: Option<Vec<Arc<Actuator>>>,
+            speed: Speed
         ) {
-            let actuators = match actuators {
-                Some(actuators) => actuators,
-                None => self.all_devices.clone().flatten_actuators(),
-            };
-            let player = self.scheduler.create_player(actuators, -1);
+            let player = self.scheduler.create_player(self.actuators.clone(), -1);
             self.handles.push(Handle::current().spawn(async move {
                 let _ = player.play_scalar(duration, speed).await;
             }));
@@ -264,17 +262,17 @@ mod tests {
 
         fn get_player(&mut self) -> PatternPlayer {
             self.scheduler
-                .create_player(self.all_devices.clone().flatten_actuators(), -1 )
+                .create_player(self.actuators.clone(), -1 )
         }
 
-        fn get_player_with_settings(&mut self, settings: Vec<ActuatorSettings>, handle: i32) -> PatternPlayer {
-            self.scheduler.create_player_with_settings(self.all_devices.clone().flatten_actuators(), settings, handle)
+        fn get_player_with_settings(&mut self, handle: i32) -> PatternPlayer {
+            self.scheduler.create_player_with_settings(self.actuators.clone(), handle)
         }
 
         async fn play_linear(&mut self, funscript: FScript, duration: Duration) {
             let player = self
                 .scheduler
-                .create_player(self.all_devices.clone().flatten_actuators(), -1);
+                .create_player(self.actuators.clone(), -1);
             player
                 .play_linear(duration, funscript)
                 .await
@@ -295,14 +293,14 @@ mod tests {
     async fn test_no_devices_does_not_block() {
         // arrange
         let client = get_test_client(vec![]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
 
         let mut fs: FScript = FScript::default();
         fs.actions.push(FSPoint { pos: 1, at: 10 });
         fs.actions.push(FSPoint { pos: 2, at: 20 });
 
         // act & assert
-        player.play_scalar(Duration::from_millis(50), Speed::max(), None);
+        player.play_scalar(Duration::from_millis(50), Speed::max());
         assert!(
             timeout(Duration::from_secs(1), player.await_last(),)
                 .await
@@ -379,7 +377,7 @@ mod tests {
     #[tokio::test]
     async fn test_stroke_update() {
         let client: ButtplugTestClient = get_test_client(vec![linear(1, "lin1")]).await;
-        let mut test = PlayerTest::setup(&client.created_devices);
+        let mut test = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
 
         // act
         let start = Instant::now();
@@ -410,14 +408,20 @@ mod tests {
         calls[2].assert_duration(100);
     }
 
+
     async fn test_stroke(speed: Speed, range: LinearRange) -> (ButtplugTestClient, Instant) {
         let client = get_test_client(vec![linear(1, "lin1")]).await;
-        let mut test = PlayerTest::setup(&client.created_devices);
+
+        let mut config = ActuatorSettings::default();
+        config.update_device(ActuatorConfig { actuator_id: "lin1 (Position)".into(), enabled: true, body_parts: vec![], limits: ActuatorLimits::Linear(range.clone()) } );
+
+        let actuators = client.created_devices.flatten_actuators().load_config(&mut config).clone();
+        let mut test = PlayerTest::setup(actuators);
 
         // act
         let start = Instant::now();
         let duration_ms = range.max_ms as f64 * 2.5;
-        let player = test.get_player_with_settings(vec![ ActuatorSettings::Linear(range)], -1);
+        let player = test.get_player_with_settings( -1);
         let _ = player
             .play_linear_stroke(Duration::from_millis(duration_ms as u64), speed, LinearRange::max())
             .await;
@@ -429,7 +433,7 @@ mod tests {
     #[tokio::test]
     async fn test_linear_empty_pattern_finishes_and_does_not_panic() {
         let client = get_test_client(vec![linear(1, "lin1")]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
 
         // act & assert
         player
@@ -448,7 +452,7 @@ mod tests {
     async fn test_linear_funscript() {
         // arrange
         let client = get_test_client(vec![linear(1, "lin1")]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
 
         let mut fscript = FScript::default();
         fscript.actions.push(FSPoint { pos: 50, at: 0 }); // zero_action_is_ignored
@@ -477,7 +481,7 @@ mod tests {
         // arrange
         let n = 40;
         let client = get_test_client(vec![linear(1, "lin1")]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
         let fscript = get_repeated_pattern(n);
 
         // act
@@ -498,7 +502,7 @@ mod tests {
     async fn test_linear_repeats_until_duration_ends() {
         // arrange
         let client = get_test_client(vec![linear(1, "lin1")]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
 
         let mut fscript = FScript::default();
         fscript.actions.push(FSPoint { pos: 100, at: 200 });
@@ -523,7 +527,7 @@ mod tests {
     async fn test_linear_cancels_after_duration() {
         // arrange
         let client = get_test_client(vec![linear(1, "lin1")]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
 
         let mut fscript = FScript::default();
         fscript.actions.push(FSPoint { pos: 0, at: 400 });
@@ -550,20 +554,20 @@ mod tests {
     async fn test_scalar_empty_pattern_finishes_and_does_not_panic() {
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup(client.created_devices.flatten_actuators().clone());
 
         // act & assert
         let duration = Duration::from_millis(1);
         let fscript = FScript::default();
         player
-            .play_scalar_pattern(duration, fscript, Speed::max(), None)
+            .play_scalar_pattern(duration, fscript, Speed::max())
             .await;
 
         let mut fscript = FScript::default();
         fscript.actions.push(FSPoint { pos: 0, at: 0 });
         fscript.actions.push(FSPoint { pos: 0, at: 0 });
         player
-            .play_scalar_pattern(Duration::from_millis(200), fscript, Speed::max(), None)
+            .play_scalar_pattern(Duration::from_millis(200), fscript, Speed::max())
             .await;
     }
 
@@ -571,12 +575,12 @@ mod tests {
     async fn test_scalar_pattern_actuator_selection() {
         // arrange
         let client = get_test_client(vec![scalars(1, "vib1", ActuatorType::Vibrate, 2)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
         let actuators = client.created_devices.clone().flatten_actuators();
-
+       
         // act
         let start = Instant::now();
 
+        let mut player = PlayerTest::setup(vec![actuators[1].clone()]);
         let mut fs1 = FScript::default();
         fs1.actions.push(FSPoint { pos: 10, at: 0 });
         fs1.actions.push(FSPoint { pos: 20, at: 100 });
@@ -585,19 +589,18 @@ mod tests {
                 Duration::from_millis(125),
                 fs1,
                 Speed::max(),
-                Some(vec![actuators[1].clone()]),
             )
             .await;
 
+        let mut player2 = PlayerTest::setup(vec![actuators[0].clone()]);
         let mut fs2 = FScript::default();
         fs2.actions.push(FSPoint { pos: 30, at: 0 });
         fs2.actions.push(FSPoint { pos: 40, at: 100 });
-        player
+        player2
             .play_scalar_pattern(
                 Duration::from_millis(125),
                 fs2,
-                Speed::max(),
-                Some(vec![actuators[0].clone()]),
+                Speed::max()
             )
             .await;
 
@@ -614,7 +617,7 @@ mod tests {
     async fn test_scalar_pattern_repeats_until_duration_ends() {
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
 
         // act
         let mut fs = FScript::default();
@@ -624,7 +627,7 @@ mod tests {
 
         let start = Instant::now();
         player
-            .play_scalar_pattern(Duration::from_millis(125), fs, Speed::max(), None)
+            .play_scalar_pattern(Duration::from_millis(125), fs, Speed::max())
             .await;
 
         // assert
@@ -643,13 +646,13 @@ mod tests {
         // arrange
         let n = 40;
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
         let fscript = get_repeated_pattern(n);
 
         // act
         let start = Instant::now();
         player
-            .play_scalar_pattern(get_duration_ms(&fscript), fscript, Speed::max(), None)
+            .play_scalar_pattern(get_duration_ms(&fscript), fscript, Speed::max())
             .await;
 
         // assert
@@ -662,7 +665,7 @@ mod tests {
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
         let mut player = PlayerTest::setup_with_settings(
-            &client.created_devices,
+            client.created_devices.flatten_actuators().clone(),
             PlayerSettings {
                 scalar_resolution_ms: 100,
             },
@@ -677,7 +680,7 @@ mod tests {
         // act
         let start = Instant::now();
         player
-            .play_scalar_pattern(Duration::from_millis(150), fs, Speed::max(), None)
+            .play_scalar_pattern(Duration::from_millis(150), fs, Speed::max())
             .await;
 
         // assert
@@ -691,7 +694,7 @@ mod tests {
     async fn test_scalar_pattern_control() {
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
 
         let mut fs = FScript::default();
         fs.actions.push(FSPoint { pos: 100, at: 0 });
@@ -701,7 +704,7 @@ mod tests {
         // act
         let start = Instant::now();
         player
-            .play_scalar_pattern(Duration::from_millis(50), fs, Speed::new(10), None)
+            .play_scalar_pattern(Duration::from_millis(50), fs, Speed::new(10))
             .await;
 
         // assert
@@ -716,11 +719,11 @@ mod tests {
     async fn test_scalar_constant_control() {
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
 
         // act
         let start = Instant::now();
-        player.play_scalar(Duration::from_millis(300), Speed::new(100), None);
+        player.play_scalar(Duration::from_millis(300), Speed::new(100));
         wait_ms(100).await;
         player.scheduler.update_task(1, Speed::new(50));
         wait_ms(100).await;
@@ -748,10 +751,10 @@ mod tests {
         let start = Instant::now();
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
 
-        let mut player = PlayerTest::setup(&client.created_devices);
-        player.play_scalar(Duration::from_millis(100), Speed::max(), None);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
+        player.play_scalar(Duration::from_millis(100), Speed::max());
         for _ in 0..2 {
-            player.play_scalar(Duration::from_millis(1), Speed::max(), None);
+            player.play_scalar(Duration::from_millis(1), Speed::max());
             player.await_last().await;
         }
 
@@ -773,14 +776,14 @@ mod tests {
 
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
 
         // act
         let start = Instant::now();
 
-        player.play_scalar(Duration::from_millis(500), Speed::new(50), None);
+        player.play_scalar(Duration::from_millis(500), Speed::new(50));
         wait_ms(100).await;
-        player.play_scalar(Duration::from_millis(100), Speed::new(100), None);
+        player.play_scalar(Duration::from_millis(100), Speed::new(100));
         player.await_all().await;
 
         // assert
@@ -801,17 +804,17 @@ mod tests {
 
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
 
         // act
         let start = Instant::now();
-        player.play_scalar(Duration::from_secs(3), Speed::new(20), None);
+        player.play_scalar(Duration::from_secs(3), Speed::new(20));
         wait_ms(250).await;
 
-        player.play_scalar(Duration::from_secs(2), Speed::new(40), None);
+        player.play_scalar(Duration::from_secs(2), Speed::new(40));
         wait_ms(250).await;
 
-        player.play_scalar(Duration::from_secs(1), Speed::new(80), None);
+        player.play_scalar(Duration::from_secs(1), Speed::new(80));
         player.await_all().await;
 
         // assert
@@ -835,17 +838,17 @@ mod tests {
 
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
 
         // act
         let start = Instant::now();
-        player.play_scalar(Duration::from_secs(3), Speed::new(20), None);
+        player.play_scalar(Duration::from_secs(3), Speed::new(20));
         wait_ms(250).await;
 
-        player.play_scalar(Duration::from_secs(1), Speed::new(40), None);
+        player.play_scalar(Duration::from_secs(1), Speed::new(40));
         wait_ms(250).await;
 
-        player.play_scalar(Duration::from_secs(1), Speed::new(80), None);
+        player.play_scalar(Duration::from_secs(1), Speed::new(80));
         player.await_last().await;
         thread::sleep(Duration::from_secs(2));
         player.await_all().await;
@@ -869,7 +872,7 @@ mod tests {
 
         // arrange
         let client = get_test_client(vec![scalar(1, "vib1", ActuatorType::Vibrate)]).await;
-        let mut player = PlayerTest::setup(&client.created_devices);
+        let mut player = PlayerTest::setup_no_settings(&client.created_devices);
 
         // act
         let mut fscript = FScript::default();
@@ -881,10 +884,10 @@ mod tests {
         }
 
         let start = Instant::now();
-        player.play_scalar(Duration::from_secs(1), Speed::new(99), None);
+        player.play_scalar(Duration::from_secs(1), Speed::new(99));
         wait_ms(250).await;
         player
-            .play_scalar_pattern(Duration::from_secs(3), fscript, Speed::max(), None)
+            .play_scalar_pattern(Duration::from_secs(3), fscript, Speed::max())
             .await;
 
         // assert
@@ -899,19 +902,19 @@ mod tests {
             scalar(2, "vib2", ActuatorType::Vibrate),
         ])
         .await;
-        let mut player = PlayerTest::setup(&client.created_devices);
 
         // act
         let start = Instant::now();
+        let mut player = PlayerTest::setup(vec![client.get_device(1)].flatten_actuators());
         player.play_scalar(
             Duration::from_millis(300),
-            Speed::new(99),
-            Some(vec![client.get_device(1)].flatten_actuators()),
+            Speed::new(99)
         );
-        player.play_scalar(
+        
+        let mut player2 = PlayerTest::setup(vec![client.get_device(2)].flatten_actuators());
+        player2.play_scalar(
             Duration::from_millis(200),
-            Speed::new(88),
-            Some(vec![client.get_device(2)].flatten_actuators()),
+            Speed::new(88)
         );
 
         player.await_all().await;

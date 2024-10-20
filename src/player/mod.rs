@@ -19,7 +19,7 @@ use crate::{
         LinearSpeedScaling
     }, 
     speed::Speed, 
-    ActuatorSettings
+    ActuatorLimits
 };
 
 pub mod access;
@@ -30,7 +30,6 @@ pub struct PatternPlayer {
     pub handle: i32,
     pub scalar_resolution_ms: i32,
     pub actuators: Vec<Arc<Actuator>>,
-    pub actuator_limits: Vec<ActuatorSettings>,
     pub result_sender: UnboundedSender<WorkerResult>,
     pub result_receiver: UnboundedReceiver<WorkerResult>,
     pub update_receiver: UnboundedReceiver<Speed>,
@@ -186,12 +185,12 @@ impl PatternPlayer {
     }
 
     fn do_update(&self, speed: Speed, is_pattern: bool) {
-        for (i, actuator) in self.actuators.iter().enumerate() {
+        for actuator in &self.actuators {
             trace!("do_update {} {:?}", speed, actuator);
             self.worker_task_sender
                 .send(WorkerTask::Update(
                     actuator.clone(),
-                    apply_scalar_settings(speed, &self.actuator_limits[ i ]),
+                    apply_scalar_settings(speed, &actuator.get_config().limits),
                     is_pattern,
                     self.handle,
                 ))
@@ -201,12 +200,12 @@ impl PatternPlayer {
 
     #[instrument(skip(self))]
     fn do_scalar(&self, speed: Speed, is_pattern: bool) {
-        for (i, actuator) in self.actuators.iter().enumerate() {
+        for actuator in &self.actuators {
             trace!("do_scalar");
             self.worker_task_sender
                 .send(WorkerTask::Start(
                     actuator.clone(),
-                    apply_scalar_settings(speed, &self.actuator_limits[ i ]),
+                    apply_scalar_settings(speed, &actuator.get_config().limits),
                     is_pattern,
                     self.handle,
                 ))
@@ -235,8 +234,8 @@ impl PatternPlayer {
     }
 
     async fn do_linear(&mut self, mut pos: f64, duration_ms: u32) -> WorkerResult {
-        for (i, actuator) in self.actuators.iter().enumerate() {
-            let settings = &self.actuator_limits[ i ].linear_or_max();
+        for actuator in &self.actuators {
+            let settings = &actuator.get_config().limits.linear_or_max();
             pos = settings.apply_pos(pos);
             debug!(?duration_ms, ?pos, ?settings, "linear");
             self.worker_task_sender
@@ -255,8 +254,8 @@ impl PatternPlayer {
 
     async fn do_stroke(&mut self, start: bool, mut speed: Speed, settings: &LinearRange) -> WorkerResult {
         let mut wait_ms = 0;
-        for (i, actuator) in self.actuators.iter().enumerate() {
-            let actual_settings = settings.merge(&self.actuator_limits[ i ].linear_or_max());
+        for actuator in &self.actuators {
+            let actual_settings = settings.merge(&actuator.get_config().limits.linear_or_max());
             speed = actual_settings.scaling.apply(speed);
             wait_ms = actual_settings.get_duration_ms(speed);
             let target_pos = actual_settings.get_pos(start);
@@ -328,12 +327,12 @@ impl LinearRange {
     }
 }
 
-fn apply_scalar_settings(speed: Speed, settings: &ActuatorSettings) -> Speed {
+fn apply_scalar_settings(speed: Speed, settings: &ActuatorLimits) -> Speed {
     if speed.value == 0 {
         return speed;
     }
     match settings {
-        ActuatorSettings::Scalar(settings) => {
+        ActuatorLimits::Scalar(settings) => {
             trace!("applying {settings:?}");
             let speed = Speed::from_float(speed.as_float() * settings.factor);
             if speed.value < settings.min_speed as u16 {

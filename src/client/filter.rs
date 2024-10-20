@@ -2,17 +2,17 @@ use std::sync::Arc;
 
 use buttplug::{client::ButtplugClientDevice, core::message::ActuatorType};
 
-use crate::{actuator::{Actuator, Actuators}, actuators::BpActuatorSettings};
+use crate::{actuator::{Actuator, Actuators}, actuators::ActuatorConfig};
 
-use super::actuators::BpSettings;
+use super::actuators::ActuatorSettings;
 
 pub struct Filter {
-    settings: BpSettings,
+    settings: ActuatorSettings,
     actuators: Vec<Arc<Actuator>>
 }
 
 impl Filter {
-    pub fn new(settings: BpSettings, devices: &[Arc<ButtplugClientDevice>]) -> Self {
+    pub fn new(settings: ActuatorSettings, devices: &[Arc<ButtplugClientDevice>]) -> Self {
         Filter {
             settings,
             actuators: devices
@@ -48,13 +48,13 @@ impl Filter {
         self
     }
 
-    pub fn result(self) -> (BpSettings, Vec<Arc<Actuator>>) {
+    pub fn result(self) -> (ActuatorSettings, Vec<Arc<Actuator>>) {
         (self.settings, self.actuators)
     }
 }
 
 impl Actuator {
-    pub fn get_settings(&self, settings: &mut BpSettings) -> BpActuatorSettings {
+    pub fn get_settings(&self, settings: &mut ActuatorSettings) -> ActuatorConfig {
         settings.get_or_create(self.identifier())
     }
 }

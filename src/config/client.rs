@@ -5,7 +5,7 @@ use buttplug::core::message::LogLevel;
 use serde::{Deserialize, Serialize};
 use tracing::{error, event, info, Level};
 
-use crate::actuators::BpSettings;
+use crate::actuators::ActuatorSettings;
 
 use super::connection::ConnectionType;
 
@@ -22,7 +22,7 @@ pub struct ClientSettings {
     pub log_level: LogLevel,
     pub connection: ConnectionType,
     pub in_process_features: InProcessFeatures,
-    pub device_settings: BpSettings,
+    pub device_settings: ActuatorSettings,
     #[serde(skip)]
     pub pattern_path: String,
     #[serde(skip)]
@@ -35,7 +35,7 @@ impl Default for ClientSettings {
             version: 3,
             log_level: LogLevel::Debug,
             connection: ConnectionType::InProcess,
-            device_settings: BpSettings {
+            device_settings: ActuatorSettings {
                 devices: vec![]
             },
             pattern_path: "".into(),
@@ -99,7 +99,7 @@ impl Display for ConnectionType {
 
 #[cfg(test)]
 pub(crate) mod settings_tests {
-    use crate::actuators::BpActuatorSettings;
+    use crate::actuators::ActuatorConfig;
 
     use super::*;
     use tempfile::{tempdir, TempDir};
@@ -111,7 +111,7 @@ pub(crate) mod settings_tests {
         let mut setting = ClientSettings::default();
 
         // Act
-        setting.device_settings.devices.push(BpActuatorSettings::from_identifier("value"));
+        setting.device_settings.devices.push(ActuatorConfig::from_identifier("value"));
 
         let serialized = serde_json::to_string_pretty(&setting).unwrap();
         let deserialized: ClientSettings = serde_json::from_str(&serialized).unwrap();
@@ -126,9 +126,9 @@ pub(crate) mod settings_tests {
     fn file_existing_returns_parsed_content() {
         // Arrange
         let mut setting = ClientSettings::default();
-        setting.device_settings.devices.push(BpActuatorSettings::from_identifier("a"));
-        setting.device_settings.devices.push(BpActuatorSettings::from_identifier("b"));
-        setting.device_settings.devices.push(BpActuatorSettings::from_identifier("c"));
+        setting.device_settings.devices.push(ActuatorConfig::from_identifier("a"));
+        setting.device_settings.devices.push(ActuatorConfig::from_identifier("b"));
+        setting.device_settings.devices.push(ActuatorConfig::from_identifier("c"));
 
         let file = "test_config.json";
         let (path, tmp_dir, _tmp_handle) = create_temp_file(file, &serde_json::to_string(&setting).unwrap());

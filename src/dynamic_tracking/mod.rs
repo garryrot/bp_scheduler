@@ -3,8 +3,6 @@ use std::sync::Arc;
 use buttplug::client::ButtplugClientDevice;
 use tokio::{sync::mpsc::UnboundedReceiver, time::Instant};
 
-use crate::linear::LinearRange;
-
 pub mod movements;
 pub mod collision;
 pub mod tracking_mirror;
@@ -33,7 +31,6 @@ pub enum TrackingSignal {
 
 #[derive(Debug, Clone)]
 pub struct DynamicSettings {
-    pub boundaries: LinearRange,
     pub move_at_start: bool,
     pub min_resolution_ms: u32,
     pub min_duration_ms: u32,
@@ -46,7 +43,6 @@ pub struct DynamicSettings {
 impl Default for DynamicSettings {
     fn default() -> Self {
         DynamicSettings {
-            boundaries: LinearRange::max(),
             move_at_start: true,
             min_resolution_ms: 50,
             min_duration_ms: 200,
