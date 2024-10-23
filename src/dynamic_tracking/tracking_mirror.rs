@@ -31,7 +31,9 @@ impl DynamicTracking {
             self.settings.stroke_window_ms,
         );
 
-        let mut last_turn = Instant::now() - Duration::from_secs(99999);
+        // bad actually, because there is no guaranetee that Instant 
+        // can go several seconds into the past but it just seems to work 
+        let mut last_turn = Instant::now() - Duration::from_secs(20); 
         let mut last_pos = 0.0;
         let mut moving_inward = true;
 

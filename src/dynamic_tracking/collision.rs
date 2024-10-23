@@ -5,6 +5,7 @@ pub struct Collision {
     pub outer_distance: f32,
     pub depth: f32,
     pub min_stroke: f32,
+    pub error_tolerance: f32
 }
 
 impl Collision {
@@ -52,7 +53,8 @@ mod tests {
         let c = Collision {
             outer_distance: 10.0,
             depth: 6.0,
-            min_stroke: 0.25,
+            min_stroke: 0.25, 
+            error_tolerance: 0.35
         };
 
         assert_eq!(
@@ -96,6 +98,7 @@ mod tests {
             outer_distance: 10.0,
             depth: 10.0,
             min_stroke: 0.25,
+            error_tolerance: 0.0
         };
         assert_range_equal(c.get_stroke_range(9.0, 10.0), (0.75, 1.0)); // "upper end"
         assert_range_equal(c.get_stroke_range(7.0, 8.0), (0.55, 0.8)); // upper end middle

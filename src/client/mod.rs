@@ -799,8 +799,8 @@ mod tests {
     #[test]
     fn events_get() {
         let empty: Vec<String> = vec![];
-        let one_event = &[String::from("evt2")];
-        let two_events = &[String::from("evt2"), String::from("evt3")];
+        let one_event = &["evt2"];
+        let two_events = &["evt2","evt3"];
 
         let (mut tk, _) = wait_for_connection(
             vec![
