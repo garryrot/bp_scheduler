@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use buttplug::{client::ButtplugClientDevice, core::message::ActuatorType};
+use tracing::debug;
 
 use crate::{actuator::{Actuator, Actuators}, actuators::ActuatorConfig};
 
@@ -13,14 +14,24 @@ pub struct Filter {
 
 impl Filter {
     pub fn new(settings: ActuatorSettings, devices: &[Arc<ButtplugClientDevice>]) -> Self {
+        let actuators = devices
+            .iter()
+            .filter(|x| x.connected())
+            .cloned()
+            .collect::<Vec<Arc<ButtplugClientDevice>>>()
+            .flatten_actuators();
+
+        debug!(?actuators, "filtering");
         Filter {
             settings,
-            actuators: devices
-                .iter()
-                .filter(|x| x.connected())
-                .cloned()
-                .collect::<Vec<Arc<ButtplugClientDevice>>>()
-                .flatten_actuators(),
+            actuators
+        }
+    }
+
+    pub fn from_actuators(settings: ActuatorSettings, actuators: Vec<Arc<Actuator>>) -> Self {
+        Filter {
+            settings,
+            actuators
         }
     }
 
@@ -49,6 +60,7 @@ impl Filter {
     }
 
     pub fn result(self) -> (ActuatorSettings, Vec<Arc<Actuator>>) {
+        debug!(?self.actuators, "result");
         (self.settings, self.actuators)
     }
 }

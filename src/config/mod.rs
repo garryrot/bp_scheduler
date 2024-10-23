@@ -10,6 +10,7 @@ pub mod linear;
 pub mod logging;
 pub mod read;
 pub mod scalar;
+pub mod write;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub enum ActuatorLimits {

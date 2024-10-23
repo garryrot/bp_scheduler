@@ -1,11 +1,6 @@
-use std::{
-    fmt::{self, Display}, fs::{self}, path::PathBuf, vec
-};
+use std::fmt::{self, Display};
 use buttplug::core::message::LogLevel;
 use serde::{Deserialize, Serialize};
-use tracing::{error, event, info, Level};
-
-use crate::actuators::ActuatorSettings;
 
 use super::connection::ConnectionType;
 
@@ -18,72 +13,25 @@ pub struct InProcessFeatures {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClientSettings {
-    pub version: u32,
     pub log_level: LogLevel,
     pub connection: ConnectionType,
     pub in_process_features: InProcessFeatures,
-    pub device_settings: ActuatorSettings,
     #[serde(skip)]
-    pub pattern_path: String,
-    #[serde(skip)]
-    pub action_path: String,
+    pub pattern_path: String
 }
 
 impl Default for ClientSettings {
     fn default() -> Self {
         Self {
-            version: 3,
             log_level: LogLevel::Debug,
             connection: ConnectionType::InProcess,
-            device_settings: ActuatorSettings {
-                devices: vec![]
-            },
             pattern_path: "".into(),
-            action_path: "".into(),
             in_process_features: InProcessFeatures {
                 bluetooth: true,
                 serial: true,
                 xinput: true,
             },
         }
-    }
-}
-
-impl ClientSettings {
-    pub fn try_read_or_default(settings_path: &str, settings_file: &str) -> Self {
-        Self::try_read_or( settings_path, settings_file, ClientSettings::default() )
-    }
-
-    pub fn try_read_or(settings_path: &str, settings_file: &str, or: ClientSettings) -> Self {
-        let path: PathBuf = [settings_path, settings_file].iter().collect::<PathBuf>();
-        match fs::read_to_string(path) {
-            Ok(settings_json) => match serde_json::from_str::<ClientSettings>(&settings_json) {
-                Ok(settings) => {
-                    settings
-                }
-                Err(err) => {
-                    error!("Settings path '{}' could not be parsed. Error: {}. Using default configuration.", settings_path, err);
-                    or
-                }
-            },
-            Err(err) => {
-                info!("Settings path '{}' could not be opened. Error: {}. Using default configuration.", settings_path, err);
-                or
-            }
-        }
-    }
-
-    pub fn try_write(&self, settings_path: &str, settings_file: &str) -> bool {
-        let json = serde_json::to_string_pretty(self).expect("Always serializable");
-        let _ = fs::create_dir_all(settings_path);
-        let filename = [settings_path, settings_file].iter().collect::<PathBuf>();
-
-        event!(Level::INFO, filename=?filename, settings=?self, "Storing settings");
-        if let Err(err) = fs::write(filename, json) {
-            error!("Writing to file failed. Error: {}.", err);
-            return false;
-        }
-        true
     }
 }
 
@@ -99,50 +47,36 @@ impl Display for ConnectionType {
 
 #[cfg(test)]
 pub(crate) mod settings_tests {
-    use crate::actuators::ActuatorConfig;
+    use std::fs;
+
+    use crate::{actuators::{ActuatorConfig, ActuatorSettings}, read::read_or_default};
 
     use super::*;
     use tempfile::{tempdir, TempDir};
     use tokio_test::assert_ok;
 
     #[test]
-    fn serialize_deserialize_works() {
-        // Arrange
-        let mut setting = ClientSettings::default();
-
-        // Act
-        setting.device_settings.devices.push(ActuatorConfig::from_identifier("value"));
-
-        let serialized = serde_json::to_string_pretty(&setting).unwrap();
-        let deserialized: ClientSettings = serde_json::from_str(&serialized).unwrap();
-        println!("{}", serialized);
-        assert_eq!(
-            deserialized.device_settings.devices[0].actuator_id,
-            setting.device_settings.devices[0].actuator_id
-        );
-    }
-
-    #[test]
     fn file_existing_returns_parsed_content() {
         // Arrange
-        let mut setting = ClientSettings::default();
-        setting.device_settings.devices.push(ActuatorConfig::from_identifier("a"));
-        setting.device_settings.devices.push(ActuatorConfig::from_identifier("b"));
-        setting.device_settings.devices.push(ActuatorConfig::from_identifier("c"));
+        let mut setting = ActuatorSettings::default();
+        setting.0.push(ActuatorConfig::from_identifier("a"));
+        setting.0.push(ActuatorConfig::from_identifier("b"));
+        setting.0.push(ActuatorConfig::from_identifier("c"));
 
         let file = "test_config.json";
         let (path, tmp_dir, _tmp_handle) = create_temp_file(file, &serde_json::to_string(&setting).unwrap());
 
         // Act
         println!("{}", path);
-        let settings = ClientSettings::try_read_or_default(&tmp_dir, file);
-        assert_eq!(settings.device_settings.devices.len(), 3);
+        
+        let settings = read_or_default::<ActuatorSettings>(&tmp_dir, file);
+        assert_eq!(settings.0.len(), 3);
     }
 
     #[test]
     fn file_not_existing_returns_default() {
-        let settings = ClientSettings::try_read_or_default("Path that does not exist", "some.json");
-        assert_eq!(settings.device_settings.devices.len(), settings.device_settings.devices.len());
+        let settings = read_or_default::<ActuatorSettings>("Path that does not exist", "some.json");
+        assert_eq!(settings.0.len(), settings.0.len());
     }
 
     #[test]
@@ -152,81 +86,64 @@ pub(crate) mod settings_tests {
 
         // Act
         let settings =
-            ClientSettings::try_read_or_default(&tmp_dir, "bogus.json");
+            read_or_default::<ActuatorSettings>(&tmp_dir, "bogus.json");
 
         // Assert
-        assert_eq!(settings.device_settings.devices.len(), settings.device_settings.devices.len());
+        assert_eq!(settings.0.len(), settings.0.len());
     }
 
     #[test]
     fn adds_every_device_only_once() {
-        let mut settings = ClientSettings::default();
-        settings.device_settings.get_or_create("a");
-        settings.device_settings.get_or_create("a");
-        assert_eq!(settings.device_settings.devices.len(), 1);
+        let mut settings = ActuatorSettings::default();
+        settings.get_or_create("a");
+        settings.get_or_create("a");
+        assert_eq!(settings.0.len(), 1);
     }
 
     #[test]
     fn enable_and_disable_devices() {
-        let mut settings = ClientSettings::default();
-        settings.device_settings.get_or_create("a");
-        settings.device_settings.get_or_create("b");
-        settings.device_settings.set_enabled("a", true);
-        let enabled_devices = settings.device_settings.get_enabled_devices();
+        let mut settings = ActuatorSettings::default();
+        settings.get_or_create("a");
+        settings.get_or_create("b");
+        settings.set_enabled("a", true);
+        let enabled_devices = settings.get_enabled_devices();
         assert_eq!(enabled_devices.len(), 1);
         assert_eq!(enabled_devices[0].actuator_id, "a");
 
-        settings.device_settings.set_enabled("a", false);
-        assert_eq!(settings.device_settings.get_enabled_devices().len(), 0);
+        settings.set_enabled("a", false);
+        assert_eq!(settings.get_enabled_devices().len(), 0);
     }
 
     #[test]
     fn enable_multiple_devices() {
-        let mut settings = ClientSettings::default();
-        settings.device_settings.get_or_create("a");
-        settings.device_settings.get_or_create("b");
-        settings.device_settings.set_enabled("a", true);
-        settings.device_settings.set_enabled("b", true);
-        assert_eq!(settings.device_settings.get_enabled_devices().len(), 2);
+        let mut settings = ActuatorSettings::default();
+        settings.get_or_create("a");
+        settings.get_or_create("b");
+        settings.set_enabled("a", true);
+        settings.set_enabled("b", true);
+        assert_eq!(settings.get_enabled_devices().len(), 2);
     }
 
     #[test]
     fn enable_unknown_device() {
-        let mut settings = ClientSettings::default();
-        settings.device_settings.set_enabled("foobar", true);
-        assert_eq!(settings.device_settings.get_enabled_devices()[0].actuator_id, "foobar");
+        let mut settings = ActuatorSettings::default();
+        settings.set_enabled("foobar", true);
+        assert_eq!(settings.get_enabled_devices()[0].actuator_id, "foobar");
     }
 
     #[test]
     fn is_enabled_false() {
-        let mut settings = ClientSettings::default();
-        settings.device_settings.get_or_create("a");
-        assert!(!settings.device_settings.get_enabled("a"));
+        let mut settings = ActuatorSettings::default();
+        settings.get_or_create("a");
+        assert!(!settings.get_enabled("a"));
     }
 
     #[test]
     fn is_enabled_true() {
-        let mut settings = ClientSettings::default();
-        settings.device_settings.get_or_create("a");
-        settings.device_settings.set_enabled("a", true);
-        assert!(settings.device_settings.get_enabled("a"));
-    }
-
-    #[test]
-    fn write_to_temp_file() {
-        let mut settings = ClientSettings::default();
-        settings.device_settings.get_or_create("foobar");
-
-        // act
-        let target_file = "some_target_file.json";
-        let (_, tmpdir, tmp_handle) = create_temp_file(target_file, "");
-        settings.try_write(&tmpdir, target_file);
-
-        // assert
-        let settings2 =
-            ClientSettings::try_read_or_default(&tmpdir, target_file);
-        assert_eq!(settings2.device_settings.devices[0].actuator_id, "foobar");
-        assert_ok!(tmp_handle.close());
+        let mut settings = ActuatorSettings::default();
+        settings.get_or_create("a");
+        settings.set_enabled("a", true);
+        assert!(settings.get_enabled("a"));
     }
 
     #[test]

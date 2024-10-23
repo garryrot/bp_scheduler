@@ -161,7 +161,7 @@ pub struct StrokeRange {
 
 #[cfg(test)]
 mod tests {
-    use crate::{config::client::settings_tests::*, read::read_config};
+    use crate::{config::client::settings_tests::*, read::read_config_dir};
 
     use super::*;
 
@@ -223,7 +223,7 @@ mod tests {
         let s2 = serde_json::to_string_pretty(&a2).unwrap();
         let (_, temp_dir, tmp_path) = create_temp_file("action1.json", &s1);
         add_temp_file("action2.json", &s2, &tmp_path);
-        let actions: Vec<Action> = read_config(temp_dir);
+        let actions: Vec<Action> = read_config_dir(temp_dir);
         assert_eq!(actions.len(), 4);
         tmp_path.close().unwrap();
     }

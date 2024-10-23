@@ -13,9 +13,7 @@ use super::{
 
 /// actuator sepcific settings
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct ActuatorSettings {
-    pub devices: Vec<ActuatorConfig>
-}
+pub struct ActuatorSettings(pub Vec<ActuatorConfig>);
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ActuatorConfig {
@@ -28,7 +26,7 @@ pub struct ActuatorConfig {
 
 impl ActuatorSettings {
     pub fn get_enabled_devices(&self) -> Vec<ActuatorConfig> {
-        self.devices.iter().filter(|d| d.enabled).cloned().collect()
+        self.0.iter().filter(|d| d.enabled).cloned().collect()
     }
 
     pub fn get_or_create(&mut self, actuator_id: &str) -> ActuatorConfig {
@@ -101,16 +99,16 @@ impl ActuatorSettings {
    
     pub fn update_device(&mut self, setting: ActuatorConfig)
     {
-        let insert_pos = self.devices.iter().find_position(|x| x.actuator_id == setting.actuator_id);
+        let insert_pos = self.0.iter().find_position(|x| x.actuator_id == setting.actuator_id);
         if let Some((pos, _)) = insert_pos {
-            self.devices[ pos ] = setting;
+            self.0[ pos ] = setting;
         } else {
-            self.devices.push(setting);
+            self.0.push(setting);
         }
     }
 
     pub fn get_device(&self, actuator_id: &str) -> Option<ActuatorConfig> {
-         self.devices
+         self.0
                 .iter()
                 .find(|d| d.actuator_id == actuator_id)
                 .cloned()
@@ -119,16 +117,14 @@ impl ActuatorSettings {
     #[instrument]
     pub fn set_enabled(&mut self, actuator_id: &str, enabled: bool) {
         debug!("set_enabled");
-
         let mut device =  self.get_or_create(actuator_id);
         device.enabled = enabled;
         self.update_device(device)
     }
 
     #[instrument]
-    pub fn set_events(&mut self, actuator_id: &str, events: &[String]) {
-        debug!("set_events");
-
+    pub fn set_body_parts(&mut self, actuator_id: &str, events: &[&str]) {
+        debug!("set_body_parts");
         let mut device = self.get_or_create(actuator_id);
         device.body_parts = trim_lower_str_list(events);
         self.update_device(device);

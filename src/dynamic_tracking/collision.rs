@@ -1,3 +1,6 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Collision {
     pub outer_distance: f32,
     pub depth: f32,

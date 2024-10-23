@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use buttplug::client::ButtplugClientDevice;
 use derive_new::new;
+use serde::{Deserialize, Serialize};
 use tokio::{sync::mpsc::UnboundedReceiver, time::Instant};
+
+use crate::actuator::Actuator;
 
 pub mod movements;
 pub mod collision;
@@ -22,7 +24,7 @@ pub enum TrackingSignal {
     Stop,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DynamicSettings {
     pub move_at_start: bool,
     pub min_resolution_ms: u32,
@@ -30,7 +32,7 @@ pub struct DynamicSettings {
     pub default_stroke_ms: u32,
     pub default_stroke_in: f64,
     pub default_stroke_out: f64,
-    pub stroke_window_ms: u32,
+    pub stroke_window_ms: u32
 }
 
 impl Default for DynamicSettings {
@@ -42,7 +44,7 @@ impl Default for DynamicSettings {
             default_stroke_ms: 400,
             default_stroke_in: 0.0,
             default_stroke_out: 1.0,
-            stroke_window_ms: 3_000,
+            stroke_window_ms: 3_000
         }
     }
 }
@@ -50,6 +52,5 @@ impl Default for DynamicSettings {
 pub struct DynamicTracking {
     pub settings: DynamicSettings,
     pub signals: UnboundedReceiver<TrackingSignal>,
-    pub devices: Vec<Arc<ButtplugClientDevice>>,
+    pub actuators: Vec<Arc<Actuator>>,
 }
-

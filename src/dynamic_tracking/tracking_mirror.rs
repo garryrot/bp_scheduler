@@ -95,14 +95,14 @@ impl DynamicTracking {
     }
 
     async fn move_devices(&self, estimated_dur: u32, last_pos: f64) {
-        for device in &self.devices {
+        for actuator in &self.actuators {
             info!(
                 "moving {} to {} over {}ms...",
-                device.name(),
+                actuator.identifier(),
                 last_pos,
                 estimated_dur
             );
-            device
+            actuator.device
                 .linear(&LinearCommand::Linear(estimated_dur, last_pos))
                 .await
                 .unwrap();
@@ -132,7 +132,7 @@ mod tests {
     use bp_fakes::{get_test_client, linear, ButtplugTestClient};
     use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
-    use crate::dynamic_tracking::*;
+    use crate::{actuator::Actuators, dynamic_tracking::*};
 
     async fn setup() -> (
         ButtplugTestClient,
@@ -140,7 +140,7 @@ mod tests {
         DynamicTracking,
     ) {
         let test_client = get_test_client(vec![linear(1, "lin1")]).await;
-        let devices = test_client.created_devices.clone();
+        let actuators = test_client.created_devices.flatten_actuators().clone();
         let (sender, receiver) = unbounded_channel::<TrackingSignal>();
         let tracking = DynamicTracking {
             settings: DynamicSettings {
@@ -150,10 +150,10 @@ mod tests {
                 default_stroke_ms: 400,
                 default_stroke_in: 0.0,
                 default_stroke_out: 1.0,
-                stroke_window_ms: 3_000,
+                stroke_window_ms: 3_000
             },
             signals: receiver,
-            devices,
+            actuators,
         };
         (test_client, sender, tracking)
     }
