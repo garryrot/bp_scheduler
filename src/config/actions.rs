@@ -27,7 +27,7 @@ impl ActionRef {
 pub enum Strength {
     Constant(i32),
     Funscript(i32, String),
-    RandomFunscript(i32, Vec<String>),
+    RandomFunscript(i32, Vec<String>)
 }
 
 impl Strength {
@@ -52,22 +52,26 @@ impl Display for Strength {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum BodyParts {
-    All,
-    Tags(Vec<String>),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Action {
     pub name: String,
-    pub control: Vec<Control>,
+    pub do_bone_tracking: bool,
+    pub control: Vec<Control>
 }
 
 impl Action {
     pub fn new(name: &str, control: Vec<Control>) -> Self {
         Action {
             name: name.into(),
-            control,
+            do_bone_tracking: false,
+            control
+        }
+    }
+
+    pub fn new_with_bone(name: &str, control: Vec<Control>) -> Self {
+        Action {
+            name: name.into(),
+            do_bone_tracking: true,
+            control
         }
     }
 }
@@ -75,7 +79,7 @@ impl Action {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Control {
     Scalar(Selector, Vec<ScalarActuator>),
-    Stroke(Selector, StrokeRange),
+    Stroke(Selector, StrokeRange)
 }
 
 impl Control {
@@ -158,6 +162,7 @@ pub struct StrokeRange {
     pub min_pos: f64,
     pub max_pos: f64,
 }
+
 
 #[cfg(test)]
 mod tests {

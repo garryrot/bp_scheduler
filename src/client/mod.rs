@@ -13,7 +13,7 @@ use connection::ConnectionType;
 use rand::Rng;
 
 use futures::Future;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, span, Level};
 
 use tokio::runtime::Runtime;
 
@@ -224,40 +224,50 @@ impl BpClient {
         true
     }
 
+    pub fn get_actions_from_refs(&mut self, action_refs: Vec<ActionRef>) -> Vec<(Strength,Action)> {
+        let mut result = vec![];
+        for action_ref in action_refs {
+            if let Some(action) = self
+                .actions
+                .0
+                .iter()
+                .find(|x| x.name == action_ref.action)
+            {
+                result.push((action_ref.strength, action.clone()));
+            }
+        }
+        result
+    }
+
     pub fn dispatch_refs(
         &mut self,
-        action_refs: Vec<ActionRef>,
+        actions: Vec<(Strength,Action)>,
         body_parts: Vec<String>,
         speed: Speed,
         duration: Duration,
     ) -> i32 {
         let mut handle = -1;
-        for action_ref in action_refs {
-            if let Some(action) = self
-                .actions
-                .clone()
-                .0
-                .iter()
-                .find(|x| x.name == action_ref.action)
-            {
-                let strength = action_ref.strength.multiply(&speed);
-                for control in action.control.clone() {
-                    let ext_selector = Selector::from(&body_parts);
-                    handle = self.dispatch(
-                        action.name.clone(),
-                        match control {
-                            Control::Scalar(selector, actuators) => {
-                                Control::Scalar(selector.and(ext_selector), actuators)
-                            }
-                            Control::Stroke(selector, stroke_range) => {
-                                Control::Stroke(selector.and(ext_selector), stroke_range)
-                            }
-                        },
-                        strength.clone(),
-                        duration,
-                        handle,
-                    );
-                }
+        for action in actions {
+            let strength = action.0.multiply(&speed);
+            for control in action.1.control.clone() {
+                let ext_selector = Selector::from(&body_parts);
+
+                let action_name = action.1.name.clone();
+                let span = span!(Level::INFO, "action={}", action_name);
+                let _ = span.enter();
+                handle = self.dispatch(
+                    match control {
+                        Control::Scalar(selector, actuators) => {
+                            Control::Scalar(selector.and(ext_selector), actuators)
+                        }
+                        Control::Stroke(selector, range) => {
+                            Control::Stroke(selector.and(ext_selector), range)
+                        }
+                    },
+                    strength.clone(),
+                    duration,
+                    handle,
+                );
             }
         }
         handle
@@ -265,11 +275,10 @@ impl BpClient {
 
     pub fn dispatch(
         &mut self,
-        action_name: String,
         control: Control,
         strength: Strength,
         duration: Duration,
-        handle: i32,
+        handle: i32
     ) -> i32 {
         self.scheduler.clean_finished_tasks();
         let body_parts = trim_lower_str_list(&control.get_selector().as_vec().iter().map(|x| x.as_str()).collect::<Vec<_>>());
@@ -289,14 +298,14 @@ impl BpClient {
         let handle = player.handle;
         info!(
             handle,
-            "dispatching {:?} {:?} {:?}", action_name, strength, control
+            "dispatching {:?} {:?}", strength, control
         );
 
         self.runtime.spawn(async move {
             let now = Instant::now();
             info!(
-                "action started {:?} {:?} {:?} {:?}",
-                action_name, player.actuators, body_parts, player.handle
+                "action started {:?} {:?} {:?}",
+                player.actuators, body_parts, player.handle
             );
             let result = match control {
                 Control::Scalar(_, _) => match strength {
@@ -393,24 +402,22 @@ impl BpClient {
                             }
                         }
                     }
-                },
+                }
             };
             info!(handle, "done");
 
             match result {
                 Ok(()) => {
                     info!(
-                        "action done {:?} {:?} {:?}",
-                        action_name,
+                        "action done {:?} {:?}",
                         now.elapsed(),
                         handle
                     );
                 }
                 Err(err) => {
                     error!(
-                        "action error {:?} {:?} {:?} {:?}",
+                        "action error {:?} {:?} {:?}",
                         err,
-                        action_name,
                         now.elapsed(),
                         handle
                     )
