@@ -303,10 +303,7 @@ impl BpClient {
 
         self.runtime.spawn(async move {
             let now = Instant::now();
-            info!(
-                "action started {:?} {:?} {:?}",
-                player.actuators, body_parts, player.handle
-            );
+            info!(?player.actuators, ?body_parts, player.handle, "action started");
             let result = match control {
                 Control::Scalar(_, _) => match strength {
                     Strength::Constant(speed) => {
