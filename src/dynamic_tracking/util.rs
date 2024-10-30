@@ -1,7 +1,7 @@
 
 // todo: limit_speed_by_shortening_distance
 pub fn limit_speed(from_pos: f64, to_pos: f64, duration_ms: u32, min_duration_full_range: u32) -> f64 {
-    if duration_ms < min_duration_full_range { // self.settings.min_duration_ms
+    if duration_ms < min_duration_full_range { // self.settings.stroke_min_ms
         let max_dist = duration_ms as f64 / min_duration_full_range as f64;
         let mut dist = to_pos - from_pos;
         if dist < 0.0 && dist < -max_dist {

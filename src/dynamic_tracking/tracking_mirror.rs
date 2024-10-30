@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::atomic::Ordering, time::Duration};
 
 use buttplug::client::LinearCommand;
 use tokio::time::Instant;
@@ -8,32 +8,31 @@ use crate::dynamic_tracking::{movements::*, util::*, DynamicTracking, TrackingSi
 
 impl DynamicTracking {
     /// mirrors the movement range of the last range for an estimated duration
-    pub async fn track_mirror(mut self) {
+    pub async fn track_mirror(&mut self) {
         let penetrating = |pen_time: &Option<Instant>| match pen_time {
             Some(time) => {
-                (Instant::now() - *time)
-                    < Duration::from_millis(self.settings.stroke_window_ms.into())
+                (Instant::now() - *time) < Duration::from_millis(self.settings.stroke_max_ms.into())
             }
             None => false,
         };
 
         if self.settings.move_at_start {
             self.move_devices(
-                self.settings.default_stroke_ms,
-                self.settings.default_stroke_in,
+                self.settings.stroke_default_ms,
+                self.settings.stroke_default_in,
             )
             .await;
         }
 
-        let mut last_pen = None;
-        let mut meas = Movements::new(
-            self.settings.default_stroke_ms,
-            self.settings.stroke_window_ms,
-        );
+        // self.set_var_pen_depth(0.1);
+        // self.set_var_pen_speed(self.settings.stroke_max_ms - 1);
 
-        // bad actually, because there is no guaranetee that Instant 
-        // can go several seconds into the past but it just seems to work 
-        let mut last_turn = Instant::now() - Duration::from_secs(20); 
+        let mut last_pen = None;
+        let mut meas = Movements::new(self.settings.stroke_default_ms, self.settings.stroke_max_ms);
+
+        // bad actually, because there is no guaranetee that Instant
+        // can go several seconds into the past but it just seems to work
+        let mut last_turn = Instant::now() - Duration::from_secs(20);
         let mut last_pos = 0.0;
         let mut moving_inward = true;
 
@@ -57,8 +56,11 @@ impl DynamicTracking {
                                     last_pos,
                                     margins.most_out,
                                     estimated_dur,
-                                    self.settings.min_duration_ms,
+                                    self.settings.stroke_min_ms,
                                 );
+
+                                self.set_var_pen_speed(estimated_dur);
+                                self.set_var_pen_depth(target_pos - last_pos);
                                 self.move_devices(estimated_dur, target_pos).await;
                                 last_pos = target_pos;
                             }
@@ -79,14 +81,21 @@ impl DynamicTracking {
                                     last_pos,
                                     margins.most_in,
                                     estimated_dur,
-                                    self.settings.min_duration_ms,
+                                    self.settings.stroke_min_ms,
                                 );
+
+                                self.set_var_pen_depth(target_pos - last_pos);
+                                self.set_var_pen_speed(estimated_dur);
                                 self.move_devices(estimated_dur, target_pos).await;
                                 last_pos = target_pos;
                             }
                         }
                     }
-                    TrackingSignal::Stop => stop = true,
+                    TrackingSignal::Stop => {
+                        self.set_var_pen_depth(0.0);
+                        self.set_var_pen_speed(self.settings.stroke_max_ms);
+                        stop = true;
+                    } 
                 },
                 None => {
                     error!("signals stopped");
@@ -94,6 +103,24 @@ impl DynamicTracking {
                 }
             }
         }
+    }
+
+    fn set_var_pen_depth(&self, depth: f64) {
+        let dept = f64::abs(depth) * 100.0;
+        self.cur_depth
+            .store(f64::abs(dept) as i64, Ordering::Relaxed);
+    }
+
+    fn set_var_pen_speed(&self, estimated_dur: u32) {
+        let val = if estimated_dur < self.settings.stroke_min_ms {
+            1.0
+        } else {
+            let ms_to_min = (estimated_dur - self.settings.stroke_min_ms) as f32;
+            let max_ms = (self.settings.stroke_max_ms - self.settings.stroke_min_ms) as f32;
+            let x = 1.0 - (ms_to_min / max_ms);
+            (x * x) * 100.0
+        };
+        self.cur_avg_ms.store(val as i64, Ordering::Relaxed);
     }
 
     async fn move_devices(&self, estimated_dur: u32, last_pos: f64) {
@@ -104,7 +131,8 @@ impl DynamicTracking {
                 last_pos,
                 estimated_dur
             );
-            actuator.device
+            actuator
+                .device
                 .linear(&LinearCommand::Linear(estimated_dur, last_pos))
                 .await
                 .unwrap();
@@ -125,7 +153,6 @@ impl DynamicTracking {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -148,14 +175,18 @@ mod tests {
             settings: DynamicSettings {
                 move_at_start: false,
                 min_resolution_ms: 50,
-                min_duration_ms: 200,
-                default_stroke_ms: 400,
-                default_stroke_in: 0.0,
-                default_stroke_out: 1.0,
-                stroke_window_ms: 3_000
+                stroke_min_ms: 200,
+                stroke_default_ms: 400,
+                stroke_default_in: 0.0,
+                stroke_default_out: 1.0,
+                stroke_max_ms: 3_000,
+                sample_ms: 50,
+                initial_timeout_ms: 1200,
             },
             signals: receiver,
             actuators,
+            cur_avg_ms: Arc::new(AtomicI64::new(0)),
+            cur_depth: Arc::new(AtomicI64::new(0)),
         };
         (test_client, sender, tracking)
     }
@@ -172,7 +203,9 @@ mod tests {
     #[tokio::test]
     pub async fn mirror_movement_after_timeout_nothing_happens() {
         let test = TestFixture::new().await;
-        test.send(TrackingSignal::Penetration(Instant::now() - Duration::from_secs(4)));
+        test.send(TrackingSignal::Penetration(
+            Instant::now() - Duration::from_secs(4),
+        ));
         test.signal_inner(0, 0.0, 1.0);
         test.signal_outer(200, 0.0, 0.0);
         test.signal_inner(400, 0.0, 1.0);
@@ -200,7 +233,7 @@ mod tests {
     pub async fn mirror_movements_too_fast_shortened() {
         let test = TestFixture::new().await;
         test.signal_penetration();
-        test.signal_inner(100,1.0, 0.0);
+        test.signal_inner(100, 1.0, 0.0);
         test.signal_outer(200, 0.0, 0.0);
         test.signal_inner(300, 1.0, 0.0);
         let results = test.finish().await;
@@ -266,7 +299,7 @@ mod tests {
             self.sender.send(signal).unwrap()
         }
 
-        async fn finish(self) -> ButtplugTestClient {
+        async fn finish(mut self) -> ButtplugTestClient {
             let test_client = self.client;
             self.sender.send(TrackingSignal::Stop).unwrap();
             self.tracking.track_mirror().await;

@@ -1,4 +1,4 @@
-use std::fmt::{self, Display};
+use std::{fmt::{self, Display}, sync::{atomic::AtomicI64, Arc}};
 
 use buttplug::core::message::ActuatorType;
 use serde::{Deserialize, Serialize};
@@ -11,11 +11,11 @@ pub struct Actions(pub Vec<Action>);
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ActionRef {
     pub action: String,
-    pub strength: Strength,
+    pub strength: Stren,
 }
 
 impl ActionRef {
-    pub fn new(name: &str, strength: Strength) -> Self {
+    pub fn new(name: &str, strength: Stren) -> Self {
         ActionRef {
             action: name.into(),
             strength,
@@ -24,8 +24,23 @@ impl ActionRef {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Variable {
+    BoneTrackingRate,
+    BoneTrackingDepth
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Stren {
+    Constant(i32),
+    Variable(Variable),
+    Funscript(i32, String),
+    RandomFunscript(i32, Vec<String>)
+}
+
+#[derive(Debug, Clone)]
 pub enum Strength {
     Constant(i32),
+    Variable(Arc<AtomicI64>),
     Funscript(i32, String),
     RandomFunscript(i32, Vec<String>)
 }
@@ -37,6 +52,7 @@ impl Strength {
             Strength::Constant(x) => Strength::Constant(mult(x)),
             Strength::Funscript(x, fs) => Strength::Funscript(mult(x), fs),
             Strength::RandomFunscript(x, fss) => Strength::RandomFunscript(mult(x), fss),
+            Strength::Variable(arc) => Strength::Variable(arc),
         }
     }
 }
@@ -47,6 +63,7 @@ impl Display for Strength {
             Strength::Constant(speed) => write!(f, "Constant({}%)", speed),
             Strength::Funscript(speed, funscript) => write!(f, "Funscript({}, {}%)", funscript, speed),
             Strength::RandomFunscript(speed, vec) => write!(f, "Random({}%, {})", speed, vec.join(",")),
+            Strength::Variable(_) => write!(f, "Dynamic"),
         }
     }
 }

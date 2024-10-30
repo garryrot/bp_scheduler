@@ -4,7 +4,14 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 use worker::{WorkerResult, WorkerTask};
 
-use std::{fmt, sync::Arc, time::Duration};
+use std::{
+    fmt,
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
     time::{sleep, Instant},
@@ -22,6 +29,12 @@ use crate::{
 
 pub mod access;
 pub mod worker;
+
+#[derive(Debug)]
+pub enum Perc {
+    Constant(Speed),
+    Global(Arc<AtomicI64>),
+}
 
 /// Pattern executor that can be passed from the schedulers main-thread to a sub-thread
 #[derive(new)]
@@ -176,6 +189,35 @@ impl PatternPlayer {
         waiter.abort();
         let result = self.do_stop(false).await;
         info!("scalar done");
+        result
+    }
+
+    /// Executes a constant movement with 'percentage' updating every 200ms
+    /// for 'duration' and consumes the player
+    #[instrument]
+    pub async fn play_scalar_var(
+        self,
+        duration: Duration,
+        variable: Arc<AtomicI64>,
+    ) -> WorkerResult {
+        info!("scalar global started");
+        let waiter = self.stop_after(duration);
+        self.do_scalar(Speed::new(variable.load(Ordering::Relaxed)), false);
+        loop {
+            tokio::select! {
+                _ = self.cancellation_token.cancelled() => {
+                    break;
+                }
+                _ = sleep(Duration::from_millis(200)) => {
+                    let val = Speed::new(variable.load(Ordering::Relaxed));
+                    debug!(?val, "var updated");
+                    self.do_update(val, false);
+                }
+            };
+        }
+        waiter.abort();
+        let result = self.do_stop(false).await;
+        info!("scalar global done");
         result
     }
 

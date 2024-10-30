@@ -224,21 +224,6 @@ impl BpClient {
         true
     }
 
-    pub fn get_actions_from_refs(&mut self, action_refs: Vec<ActionRef>) -> Vec<(Strength,Action)> {
-        let mut result = vec![];
-        for action_ref in action_refs {
-            if let Some(action) = self
-                .actions
-                .0
-                .iter()
-                .find(|x| x.name == action_ref.action)
-            {
-                result.push((action_ref.strength, action.clone()));
-            }
-        }
-        result
-    }
-
     pub fn dispatch_refs(
         &mut self,
         actions: Vec<(Strength,Action)>,
@@ -347,6 +332,9 @@ impl BpClient {
                             }
                         }
                     }
+                    Strength::Variable(arc) => {
+                        player.play_scalar_var(duration, arc).await
+                    },
                 },
                 Control::Stroke(_, range) => match strength {
                     Strength::Constant(speed) => {
@@ -399,6 +387,7 @@ impl BpClient {
                             }
                         }
                     }
+                    Strength::Variable(_) => panic!("dynamic not supported"),
                 }
             };
             info!(handle, "done");
@@ -476,18 +465,16 @@ mod tests {
         _: Option<FScript>,
         actuators: &[ScalarActuator],
     ) -> i32 {
-        tk.actions = Actions(vec![Action::new(
+        tk.actions = Actions(vec![]);
+        let x = (strength, Action::new(
             "foobar",
             vec![Control::Scalar(
                 Selector::All,
                 actuators.to_vec(),
             )],
-        )]);
+        ));
         tk.dispatch_refs(
-            vec![ActionRef {
-                action: "foobar".into(),
-                strength,
-            }],
+            vec![x],
             body_parts,
             Speed::max(),
             duration,
