@@ -34,7 +34,15 @@ impl ActuatorSettings {
         match device {
             Some(setting) => setting,
             None => {
-                let device = ActuatorConfig::from_identifier(actuator_id);
+                let mut device = ActuatorConfig::from_identifier(actuator_id);
+                device.body_parts = vec![ // TODO: Needs to be defined somewhere else
+                    "anal".to_owned(),
+                    "clitoral".to_owned(),
+                    "nipple".to_owned(),
+                    "oral".to_owned(),
+                    "penis".to_owned(),
+                    "vaginal".to_owned()
+                ];
                 self.update_device(device.clone());
                 device
             },
