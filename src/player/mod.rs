@@ -17,7 +17,7 @@ use tokio::{
     time::{sleep, Instant},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     actuator::Actuator,

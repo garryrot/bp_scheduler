@@ -68,7 +68,7 @@ pub struct BpClient {
 impl BpClient {
     pub fn connect_with<T, Fn, Fut>(
         connect_action: Fn,
-        LOGGING_SETTINGS: Option<ClientSettings>,
+        client_settings: Option<ClientSettings>,
         device_settings: Option<ActuatorSettings>
     ) -> Result<BpClient, anyhow::Error>
     where
@@ -77,7 +77,7 @@ impl BpClient {
         T: ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage>
             + 'static,
     {
-        let settings = LOGGING_SETTINGS.unwrap_or_default();
+        let settings = client_settings.unwrap_or_default();
         let (scheduler, mut worker) = ButtplugScheduler::create(PlayerSettings {
             scalar_resolution_ms: 100,
         });
