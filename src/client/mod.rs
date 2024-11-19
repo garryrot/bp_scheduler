@@ -13,7 +13,7 @@ use connection::ConnectionType;
 use rand::Rng;
 
 use futures::Future;
-use tracing::{debug, error, info, span, Level};
+use tracing::{debug, error, info, span, Instrument, Level};
 
 use tokio::runtime::Runtime;
 
@@ -68,7 +68,7 @@ pub struct BpClient {
 impl BpClient {
     pub fn connect_with<T, Fn, Fut>(
         connect_action: Fn,
-        client_settings: Option<ClientSettings>,
+        LOGGING_SETTINGS: Option<ClientSettings>,
         device_settings: Option<ActuatorSettings>
     ) -> Result<BpClient, anyhow::Error>
     where
@@ -77,7 +77,7 @@ impl BpClient {
         T: ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage>
             + 'static,
     {
-        let settings = client_settings.unwrap_or_default();
+        let settings = LOGGING_SETTINGS.unwrap_or_default();
         let (scheduler, mut worker) = ButtplugScheduler::create(PlayerSettings {
             scalar_resolution_ms: 100,
         });
@@ -238,8 +238,6 @@ impl BpClient {
                 let ext_selector = Selector::from(&body_parts);
 
                 let action_name = action.1.name.clone();
-                let span = span!(Level::INFO, "action={}", action_name);
-                let _ = span.enter();
                 handle = self.dispatch(
                     match control {
                         Control::Scalar(selector, actuators) => {
@@ -252,6 +250,7 @@ impl BpClient {
                     strength.clone(),
                     duration,
                     handle,
+                    action_name
                 );
             }
         }
@@ -263,7 +262,8 @@ impl BpClient {
         control: Control,
         strength: Strength,
         duration: Duration,
-        handle: i32
+        handle: i32,
+        action: String // just for diagnosis
     ) -> i32 {
         self.scheduler.clean_finished_tasks();
         let body_parts = trim_lower_str_list(&control.get_selector().as_vec().iter().map(|x| x.as_str()).collect::<Vec<_>>());
@@ -281,134 +281,134 @@ impl BpClient {
             .scheduler
             .create_player(actuators.load_config(&mut self.device_settings), handle);
         let handle = player.handle;
-        info!(
-            handle,
-            "dispatching {:?} {:?}", strength, control
-        );
 
         self.runtime.spawn(async move {
             let now = Instant::now();
-            info!(?player.actuators, ?body_parts, player.handle, "action started");
-            let result = match control {
-                Control::Scalar(_, _) => match strength {
-                    Strength::Constant(speed) => {
-                        player.play_scalar(duration, Speed::new(speed.into())).await
-                    }
-                    Strength::Funscript(speed, pattern) => {
-                        match read_pattern(&pattern_path, &pattern, true) {
-                            Some(fscript) => {
-                                player
-                                    .play_scalar_pattern(
-                                        duration,
-                                        fscript,
-                                        Speed::new(speed.into()),
-                                    )
-                                    .await
-                            }
-                            None => {
-                                error!("error reading pattern {}", pattern);
-                                player.play_scalar(duration, Speed::new(speed.into())).await
+            let handle = player.handle;
+            let actuators = &player.actuators;
+            let sp = span!(Level::INFO, "dispatching", handle, action);
+            info!(?actuators, ?body_parts);
+            async move {    
+                let result = match control {
+                    Control::Scalar(_, _) => match strength {
+                        Strength::Constant(speed) => {
+                            player.play_scalar(duration, Speed::new(speed.into())).await
+                        }
+                        Strength::Funscript(speed, pattern) => {
+                            match read_pattern(&pattern_path, &pattern, true) {
+                                Some(fscript) => {
+                                    player
+                                        .play_scalar_pattern(
+                                            duration,
+                                            fscript,
+                                            Speed::new(speed.into()),
+                                        )
+                                        .await
+                                }
+                                None => {
+                                    error!("error reading pattern {}", pattern);
+                                    player.play_scalar(duration, Speed::new(speed.into())).await
+                                }
                             }
                         }
-                    }
-                    Strength::RandomFunscript(speed, patterns) => {
-                        let pattern = patterns
-                            .get(rand::thread_rng().gen_range(0..patterns.len() - 1))
-                            .unwrap()
-                            .clone();
-                        match read_pattern(&pattern_path, &pattern, true) {
-                            Some(fscript) => {
-                                player
-                                    .play_scalar_pattern(
-                                        duration,
-                                        fscript,
-                                        Speed::new(speed.into()),
-                                    )
-                                    .await
-                            }
-                            None => {
-                                error!("error reading pattern {}", pattern);
-                                player.play_scalar(duration, Speed::new(speed.into())).await
+                        Strength::RandomFunscript(speed, patterns) => {
+                            let pattern = patterns
+                                .get(rand::thread_rng().gen_range(0..patterns.len() - 1))
+                                .unwrap()
+                                .clone();
+                            match read_pattern(&pattern_path, &pattern, true) {
+                                Some(fscript) => {
+                                    player
+                                        .play_scalar_pattern(
+                                            duration,
+                                            fscript,
+                                            Speed::new(speed.into()),
+                                        )
+                                        .await
+                                }
+                                None => {
+                                    error!("error reading pattern {}", pattern);
+                                    player.play_scalar(duration, Speed::new(speed.into())).await
+                                }
                             }
                         }
-                    }
-                    Strength::Variable(arc) => {
-                        player.play_scalar_var(duration, arc).await
+                        Strength::Variable(arc) => {
+                            player.play_scalar_var(duration, arc).await
+                        },
                     },
-                },
-                Control::Stroke(_, range) => match strength {
-                    Strength::Constant(speed) => {
-                        player
-                            .play_linear_stroke(
-                                duration,
-                                Speed::new(speed.into()),
-                                LinearRange {
-                                    min_ms: range.min_ms,
-                                    max_ms: range.max_ms,
-                                    min_pos: range.min_pos,
-                                    max_pos: range.max_pos,
-                                    invert: false,
-                                    scaling: LinearSpeedScaling::Linear,
-                                },
-                            )
-                            .await
-                    }
-                    Strength::Funscript(speed, pattern) => {
-                        match read_pattern(&pattern_path, &pattern, true) {
-                            Some(fscript) => player.play_linear(duration, fscript).await,
-                            None => {
-                                error!("error reading pattern {}", pattern);
-                                player
-                                    .play_linear_stroke(
-                                        duration,
-                                        Speed::new(speed.into()),
-                                        LinearRange::max(),
-                                    )
-                                    .await
+                    Control::Stroke(_, range) => match strength {
+                        Strength::Constant(speed) => {
+                            player
+                                .play_linear_stroke(
+                                    duration,
+                                    Speed::new(speed.into()),
+                                    LinearRange {
+                                        min_ms: range.min_ms,
+                                        max_ms: range.max_ms,
+                                        min_pos: range.min_pos,
+                                        max_pos: range.max_pos,
+                                        invert: false,
+                                        scaling: LinearSpeedScaling::Linear,
+                                    },
+                                )
+                                .await
+                        }
+                        Strength::Funscript(speed, pattern) => {
+                            match read_pattern(&pattern_path, &pattern, true) {
+                                Some(fscript) => player.play_linear(duration, fscript).await,
+                                None => {
+                                    error!("error reading pattern {}", pattern);
+                                    player
+                                        .play_linear_stroke(
+                                            duration,
+                                            Speed::new(speed.into()),
+                                            LinearRange::max(),
+                                        )
+                                        .await
+                                }
                             }
                         }
-                    }
-                    Strength::RandomFunscript(speed, patterns) => {
-                        let pattern = patterns
-                            .get(rand::thread_rng().gen_range(0..patterns.len() - 1))
-                            .unwrap()
-                            .clone();
-                        match read_pattern(&pattern_path, &pattern, false) {
-                            Some(fscript) => player.play_linear(duration, fscript).await,
-                            None => {
-                                error!("error reading pattern {}", pattern);
-                                player
-                                    .play_linear_stroke(
-                                        duration,
-                                        Speed::new(speed.into()),
-                                        LinearRange::max(),
-                                    )
-                                    .await
+                        Strength::RandomFunscript(speed, patterns) => {
+                            let pattern = patterns
+                                .get(rand::thread_rng().gen_range(0..patterns.len() - 1))
+                                .unwrap()
+                                .clone();
+                            match read_pattern(&pattern_path, &pattern, false) {
+                                Some(fscript) => player.play_linear(duration, fscript).await,
+                                None => {
+                                    error!("error reading pattern {}", pattern);
+                                    player
+                                        .play_linear_stroke(
+                                            duration,
+                                            Speed::new(speed.into()),
+                                            LinearRange::max(),
+                                        )
+                                        .await
+                                }
                             }
                         }
+                        Strength::Variable(_) => panic!("dynamic not supported"),
                     }
-                    Strength::Variable(_) => panic!("dynamic not supported"),
-                }
-            };
-            info!(handle, "done");
-
-            match result {
-                Ok(()) => {
-                    info!(
-                        "action done {:?} {:?}",
-                        now.elapsed(),
-                        handle
-                    );
-                }
-                Err(err) => {
-                    error!(
-                        "action error {:?} {:?} {:?}",
-                        err,
-                        now.elapsed(),
-                        handle
-                    )
-                }
-            };
+                };
+                info!(handle, "done");
+                match result {
+                    Ok(()) => {
+                        info!(
+                            "action done {:?} {:?}",
+                            now.elapsed(),
+                            handle
+                        );
+                    }
+                    Err(err) => {
+                        error!(
+                            "action error {:?} {:?} {:?}",
+                            err,
+                            now.elapsed(),
+                            handle
+                        )
+                    }
+                };
+            }.instrument(sp).await;
         });
 
         handle

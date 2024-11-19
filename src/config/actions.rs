@@ -25,6 +25,7 @@ impl ActionRef {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Variable {
+    PlayerActorValue(String), // TODO: This needs to disappear
     BoneTrackingRate,
     BoneTrackingDepth
 }

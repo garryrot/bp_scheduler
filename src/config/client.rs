@@ -12,8 +12,18 @@ pub struct InProcessFeatures {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ClientSettings {
+pub struct LoggingSettings {
     pub log_level: LogLevel,
+}
+
+impl Default for LoggingSettings {
+    fn default() -> Self {
+        Self { log_level: LogLevel::Debug }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ClientSettings {
     pub connection: ConnectionType,
     pub in_process_features: InProcessFeatures,
     #[serde(skip)]
@@ -23,7 +33,6 @@ pub struct ClientSettings {
 impl Default for ClientSettings {
     fn default() -> Self {
         Self {
-            log_level: LogLevel::Debug,
             connection: ConnectionType::InProcess,
             pattern_path: "".into(),
             in_process_features: InProcessFeatures {

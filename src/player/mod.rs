@@ -56,7 +56,7 @@ impl PatternPlayer {
         speed: Speed,
         settings: LinearRange,
     ) -> WorkerResult {
-        debug!(?settings, "oscillation started");
+        info!(?duration, "playing linear stroke");
         let waiter = self.stop_after(duration);
         let mut result = Ok(());
         let mut current_speed = speed;
@@ -70,13 +70,13 @@ impl PatternPlayer {
             result = self.do_stroke(false, current_speed, &settings).await;
         }
         waiter.abort();
+        info!("done");
         result
     }
 
     /// Executes the linear 'fscript' for 'duration' and consumes the player
-    #[instrument(skip(fscript))]
     pub async fn play_linear(mut self, duration: Duration, fscript: FScript) -> WorkerResult {
-        info!("linear pattern started");
+        info!(?duration, "playing linear");
         let mut last_result = Ok(());
         if fscript.actions.is_empty() || fscript.actions.iter().all(|x| x.at == 0) {
             return last_result;
@@ -106,12 +106,11 @@ impl PatternPlayer {
             }
         }
         waiter.abort();
-        info!("linear pattern done");
+        info!("done");
         last_result
     }
 
     /// Executes the scalar 'fscript' for 'duration' and consumes the player
-    #[instrument(skip(fscript))]
     pub async fn play_scalar_pattern(
         mut self,
         duration: Duration,
@@ -121,7 +120,7 @@ impl PatternPlayer {
         if fscript.actions.is_empty() || fscript.actions.iter().all(|x| x.at == 0) {
             return Ok(());
         }
-        info!("scalar pattern started");
+        info!(?duration, ?speed, "playing scalar pattern");
         let waiter = self.stop_after(duration);
         let action_len = fscript.actions.len();
         let mut started = false;
@@ -164,14 +163,13 @@ impl PatternPlayer {
         }
         waiter.abort();
         let result = self.do_stop(true).await;
-        info!("scalar pattern done");
+        info!("done");
         result
     }
 
     /// Executes a constant movement with 'speed' for 'duration' and consumes the player
-    #[instrument]
     pub async fn play_scalar(mut self, duration: Duration, speed: Speed) -> WorkerResult {
-        info!("scalar started");
+        info!(?duration, ?speed, "playing scalar");
         let waiter = self.stop_after(duration);
         self.do_scalar(speed, false);
         loop {
@@ -188,36 +186,40 @@ impl PatternPlayer {
         }
         waiter.abort();
         let result = self.do_stop(false).await;
-        info!("scalar done");
+        info!("done");
         result
     }
 
     /// Executes a constant movement with 'percentage' updating every 200ms
     /// for 'duration' and consumes the player
-    #[instrument]
     pub async fn play_scalar_var(
         self,
         duration: Duration,
         variable: Arc<AtomicI64>,
     ) -> WorkerResult {
-        info!("scalar global started");
+        info!(?duration, "scalar variable started");
         let waiter = self.stop_after(duration);
-        self.do_scalar(Speed::new(variable.load(Ordering::Relaxed)), false);
+        let mut last_var = variable.load(Ordering::Relaxed);
+        debug!(?last_var, self.handle, "var initialized");
+        self.do_scalar(Speed::new(last_var), false);
         loop {
             tokio::select! {
                 _ = self.cancellation_token.cancelled() => {
                     break;
                 }
                 _ = sleep(Duration::from_millis(200)) => {
-                    let val = Speed::new(variable.load(Ordering::Relaxed));
-                    debug!(?val, "var updated");
-                    self.do_update(val, false);
+                    let var = variable.load(Ordering::Relaxed);
+                    if var != last_var {
+                        debug!(?var, self.handle, "var updated");
+                        self.do_update(Speed::new(var), false);
+                        last_var = var;
+                    }
                 }
             };
         }
         waiter.abort();
         let result = self.do_stop(false).await;
-        info!("scalar global done");
+        info!("done");
         result
     }
 
@@ -235,7 +237,6 @@ impl PatternPlayer {
         }
     }
 
-    #[instrument(skip(self))]
     fn do_scalar(&self, speed: Speed, is_pattern: bool) {
         for actuator in &self.actuators {
             trace!("do_scalar");
@@ -250,7 +251,6 @@ impl PatternPlayer {
         }
     }
 
-    #[instrument(skip(self))]
     async fn do_stop(mut self, is_pattern: bool) -> WorkerResult {
         for actuator in self.actuators.iter() {
             trace!("do_stop");
