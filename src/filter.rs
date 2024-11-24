@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use buttplug::{client::ButtplugClientDevice, core::message::ActuatorType};
-use tracing::debug;
+use tracing::{debug, error};
 
-use crate::{actuator::{Actuator, Actuators}, actuators::ActuatorConfig};
+use crate::{actuator::{Actuator, ActuatorConfigLoader, Actuators}, actuators::ActuatorConfig};
 
 use super::actuators::ActuatorSettings;
 
@@ -36,7 +36,12 @@ impl Filter {
     }
 
     pub fn connected(mut self) -> Self {
-        self.actuators.retain(|x| x.device.connected());
+        self.actuators.retain(|x: &Arc<Actuator>| x.device.connected());
+        self
+    }
+
+    pub fn load_config(mut self, settings: &mut ActuatorSettings) -> Self {
+        self.actuators = self.actuators.load_config(settings);
         self
     }
 
@@ -53,7 +58,11 @@ impl Filter {
     pub fn with_body_parts(mut self, body_parts: &[String]) -> Self {
         if !body_parts.is_empty() {
             self.actuators.retain(|x| {
-                x.get_settings(&mut self.settings).body_parts.iter().any( |x| body_parts.contains(x) )
+                if let Some(c) =  &x.config {
+                    return c.body_parts.iter().any( |x| body_parts.contains(x))
+                }
+                error!("settings not initialised");
+                false
             });
         }
         self
@@ -67,6 +76,7 @@ impl Filter {
 
 impl Actuator {
     pub fn get_settings(&self, settings: &mut ActuatorSettings) -> ActuatorConfig {
+        // TODO: Remove
         settings.get_or_create(self.identifier())
     }
 }

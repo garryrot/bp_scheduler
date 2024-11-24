@@ -197,7 +197,7 @@ impl PatternPlayer {
         duration: Duration,
         variable: Arc<AtomicI64>,
     ) -> WorkerResult {
-        info!(?duration, "scalar variable started");
+        info!(?duration, "play scalar variable");
         let waiter = self.stop_after(duration);
         let mut last_var = variable.load(Ordering::Relaxed);
         debug!(?last_var, self.handle, "var initialized");
@@ -225,7 +225,7 @@ impl PatternPlayer {
 
     fn do_update(&self, speed: Speed, is_pattern: bool) {
         for actuator in &self.actuators {
-            trace!("do_update {} {:?}", speed, actuator);
+            trace!( actuator=actuator.identifier(), ?actuator.config, "do_update {} {:?}", speed, actuator);
             self.worker_task_sender
                 .send(WorkerTask::Update(
                     actuator.clone(),
@@ -239,7 +239,7 @@ impl PatternPlayer {
 
     fn do_scalar(&self, speed: Speed, is_pattern: bool) {
         for actuator in &self.actuators {
-            trace!("do_scalar");
+            trace!( actuator=actuator.identifier(), ?actuator.config, "do_scalar");
             self.worker_task_sender
                 .send(WorkerTask::Start(
                     actuator.clone(),
@@ -253,7 +253,7 @@ impl PatternPlayer {
 
     async fn do_stop(mut self, is_pattern: bool) -> WorkerResult {
         for actuator in self.actuators.iter() {
-            trace!("do_stop");
+            trace!( actuator=actuator.identifier(), ?actuator.config, "do_stop");
             self.worker_task_sender
                 .send(WorkerTask::End(
                     actuator.clone(),
@@ -274,7 +274,7 @@ impl PatternPlayer {
         for actuator in &self.actuators {
             let settings = &actuator.get_config().limits.linear_or_max();
             pos = settings.apply_pos(pos);
-            debug!(?duration_ms, ?pos, ?settings, "linear");
+            trace!(?duration_ms, ?pos, ?settings, "linear");
             self.worker_task_sender
                 .send(WorkerTask::Move(
                     actuator.clone(),

@@ -1,7 +1,8 @@
 use buttplug::client::ButtplugClientDevice;
 use buttplug::core::message::ActuatorType;
+use tracing::trace;
 use std::{
-    fmt::{self, Display}, ops::Deref, sync::Arc
+    collections::HashMap, fmt::{self, Display}, ops::Deref, sync::Arc
 };
 
 use crate::actuators::{ActuatorConfig, ActuatorSettings};
@@ -19,7 +20,7 @@ impl Actuator {
     pub fn new(
         device: &Arc<ButtplugClientDevice>,
         actuator: ActuatorType,
-        index_in_device: usize,
+        index_in_device: usize
     ) -> Self {
         let identifier = Actuator::get_identifier(device, actuator, index_in_device);
         Actuator {
@@ -49,7 +50,7 @@ impl Actuator {
     pub fn get_config(&self) -> ActuatorConfig {
         match &self.config {
             Some(cfg) => cfg.clone(),
-            None => ActuatorConfig::default() // panic!("actuator config not loaded: {:?}", self), // TODO Return default
+            None => ActuatorConfig::default()
         }
     }
 
@@ -105,11 +106,35 @@ pub trait ActuatorConfigLoader {
 
 impl ActuatorConfigLoader for Vec<Arc<Actuator>> {
     fn load_config(self, config: &mut ActuatorSettings) -> Vec<Arc<Actuator>> {
-        self.into_iter().map(|act| { 
-            Arc::new(Actuator {
-                config: Some(config.get_or_create(&act.identifier)),
-                .. act.deref().clone()
-            })
-        } ).collect()
+        fn get_dedup_index(map: &mut HashMap<String, u32>, actuator_id: &str) -> u32 {
+            let new_value = if let Some(i) = map.get(actuator_id) {
+                i + 1
+            } else {
+                0
+            };
+            map.insert(actuator_id.to_owned(), new_value + 1);
+            new_value
+        }
+
+        let mut dedup_cntr = HashMap::new();
+        let mut results = vec![];
+        for actuator in self {
+            let i = get_dedup_index(&mut dedup_cntr, &actuator.identifier);
+            let actuator_config_id = if i > 0 {
+                format!("{} #{}", actuator.identifier, i)
+            } else {
+                actuator.identifier.to_owned()
+            };
+            results.push(Arc::new( Actuator {
+                config: Some(config.get_or_create(&actuator_config_id)),
+                .. actuator.deref().clone()
+            } ));
+        }
+
+        trace!("results");
+        for actuator in &results {
+            trace!(?actuator.config);
+        }
+        results
     }
 }

@@ -49,17 +49,17 @@ impl ButtplugWorker {
                 match next_action {
                     WorkerTask::Start(actuator, speed, is_pattern, handle) => {
                         device_access
-                            .start_scalar(&actuator, speed, is_pattern, handle)
+                            .start_scalar(actuator, speed, is_pattern, handle)
                             .await;
                     }
                     WorkerTask::Update(actuator, speed, is_pattern, handle) => {
-                        device_access.update_scalar(&actuator, speed, is_pattern, handle).await;
+                        device_access.update_scalar(actuator, speed, is_pattern, handle).await;
                     }
                     WorkerTask::End(actuator, is_pattern, handle, result_sender) => {
                         let result = device_access
-                            .stop_scalar(&actuator, is_pattern, handle)
+                            .stop_scalar(actuator.clone(), is_pattern, handle)
                             .await;
-                        if let Err(err) = result_sender.send(get_worker_result(result, &actuator)) {
+                        if let Err(err) = result_sender.send(get_worker_result(result, actuator)) {
                             error!("failed sending scalar result {:?}", err)
                         }
                     }
@@ -71,7 +71,7 @@ impl ButtplugWorker {
                         Handle::current().spawn(async move {
                             let result = actuator.device.linear(&cmd).await;
                             if finish {
-                                if let Err(err) = result_sender.send(get_worker_result(result, &actuator)) {
+                                if let Err(err) = result_sender.send(get_worker_result(result, actuator)) {
                                     error!("failed sending linear result {:?}", err)
                                 }
                             }
@@ -93,7 +93,7 @@ pub struct WorkerError {
     pub actuator: Arc<Actuator>
 }
 
-fn get_worker_result<T>(bp_result: Result<T, ButtplugClientError>, actuator: &Arc<Actuator>) -> Result<T, WorkerError> {
+fn get_worker_result<T>(bp_result: Result<T, ButtplugClientError>, actuator: Arc<Actuator>) -> Result<T, WorkerError> {
     match bp_result {
         Ok(t) => Ok(t),
         Err(err) => Err(WorkerError { 

@@ -16,22 +16,28 @@ pub struct DeviceEntry {
     pub linear_tasks: Vec<(i32, Speed)>,
 }
 
+#[derive(Default, Debug, PartialEq, Eq, Hash)]
+struct ActuatorIndex {
+    device_index: u32,
+    actuator_index: u32
+}
+
 #[derive(Default)]
 pub struct DeviceAccess {
-    device_actions: HashMap<String, DeviceEntry>,
+    device_actions: HashMap<ActuatorIndex, DeviceEntry>,
 }
 
 impl DeviceAccess {
     pub async fn start_scalar(
         &mut self,
-        actuator: &Arc<Actuator>,
+        actuator: Arc<Actuator>,
         speed: Speed,
         is_pattern: bool,
         handle: i32,
     ) {
-        trace!("start scalar {:?} {} {}", speed, actuator, handle);
+        trace!( handle, ?speed, "start scalar");
         self.device_actions
-            .entry(actuator.identifier().into())
+            .entry(actuator.clone().into())
             .and_modify(|entry| {
                 entry.task_count += 1;
                 if ! is_pattern {
@@ -52,23 +58,23 @@ impl DeviceAccess {
     #[instrument(skip(self))]
     pub async fn stop_scalar(
         &mut self,
-        actuator: &Arc<Actuator>,
+        actuator: Arc<Actuator>,
         is_pattern: bool,
         handle: i32,
     ) -> Result<(), ButtplugClientError> {
         trace!("stop scalar");
-        if let Some(mut entry) = self.device_actions.remove(actuator.identifier()) {
+        if let Some(mut entry) = self.device_actions.remove(&actuator.clone().into()) {
             if ! is_pattern {
                 entry.linear_tasks.retain(|t| t.0 != handle);
             }
             let mut count = entry.task_count;
             count = count.saturating_sub(1);
             entry.task_count = count;
-            self.device_actions.insert(actuator.identifier().into(), entry);
+            self.device_actions.insert(actuator.clone().into(), entry);
             if count == 0 {
                 // nothing else is controlling the device, stop it
                 return self.set_scalar(actuator, Speed::min()).await;
-            } else if let Some(last_speed) = self.get_priority_speed(actuator) {
+            } else if let Some(last_speed) = self.get_priority_speed(actuator.clone()) {
                 let _ = self.set_scalar(actuator, last_speed).await;
             }
         }
@@ -76,10 +82,10 @@ impl DeviceAccess {
     }
 
     #[instrument(skip(self))]
-    pub async fn update_scalar(&mut self, actuator: &Arc<Actuator>, new_speed: Speed, is_pattern: bool, handle: i32) {
-        trace!("update scalar scalar");
+    pub async fn update_scalar(&mut self, actuator: Arc<Actuator>, new_speed: Speed, is_pattern: bool, handle: i32) {
+        trace!(handle, ?new_speed, "update scalar");
         if ! is_pattern {
-            self.device_actions.entry(actuator.identifier().into()).and_modify(|entry| {
+            self.device_actions.entry(actuator.clone().into()).and_modify(|entry| {
                 entry.linear_tasks = entry.linear_tasks.iter().map(|t| {
                     if t.0 == handle {
                         return (handle, new_speed);
@@ -88,15 +94,15 @@ impl DeviceAccess {
                 }).collect()
             });
         }
-        let speed = self.get_priority_speed(actuator).unwrap_or(new_speed);
-        debug!("updating {} speed to {}", actuator, speed);
+        let speed = self.get_priority_speed(actuator.clone()).unwrap_or(new_speed);
+        trace!("updating {} speed to {}", actuator, speed);
         let _ = self.set_scalar(actuator, speed).await;
     }
 
     #[instrument(skip(self))]
     async fn set_scalar(
         &self,
-        actuator: &Arc<Actuator>,
+        actuator: Arc<Actuator>,
         speed: Speed,
     ) -> Result<(), ButtplugClientError> {
         let cmd = ScalarCommand::ScalarMap(HashMap::from([(
@@ -111,8 +117,8 @@ impl DeviceAccess {
         Ok(())
     }
 
-    fn get_priority_speed(&self, actuator: &Arc<Actuator>) -> Option<Speed> {
-        if let Some(entry) = self.device_actions.get(actuator.identifier()) {
+    fn get_priority_speed(&self, actuator: Arc<Actuator>) -> Option<Speed> {
+        if let Some(entry) = self.device_actions.get(&actuator.into()) {
             let mut sorted: Vec<(i32, Speed)> = entry.linear_tasks.clone();
             sorted.sort_by_key(|b| b.0);
             if let Some(tuple) = sorted.last() {
@@ -124,5 +130,14 @@ impl DeviceAccess {
 
     pub fn clear_all(&mut self) {
         self.device_actions.clear();
+    }
+}
+
+impl From<Arc<Actuator>> for ActuatorIndex {
+    fn from(value: Arc<Actuator>) -> Self {
+        ActuatorIndex {
+            device_index: value.device.index(),
+            actuator_index: value.index_in_device,
+        } 
     }
 }

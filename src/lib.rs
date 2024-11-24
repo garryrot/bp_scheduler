@@ -96,7 +96,7 @@ impl ButtplugScheduler {
 
     pub fn update_task(&mut self, handle: i32, speed: Speed) -> bool {
         if self.control_handles.contains_key(&handle) {
-            debug!("updating handle {}", handle);
+            debug!(handle, "updating handle");
             let handles = self
                 .control_handles
                 .get(&handle)
@@ -106,23 +106,23 @@ impl ButtplugScheduler {
             }
             true
         } else {
-            error!("Unknown handle {}", handle);
+            error!(handle, "unkown handle");
             false
         }
     }
 
     pub fn stop_task(&mut self, handle: i32) {
         if self.control_handles.contains_key(&handle) {
-            debug!("stop handle {}", handle);
             let handles = self.control_handles
                 .remove(&handle)
                 .unwrap();
+            debug!(handle, ?handles, "stop handle");
 
             for handle in handles {
                 handle.cancellation_token.cancel();
             }
         } else {
-            error!("Unknown handle {}", handle);
+            error!(handle, "Unknown handle");
         } 
     }
 
@@ -404,12 +404,11 @@ mod tests {
         calls[2].assert_duration(100);
     }
 
-
     async fn test_stroke(speed: Speed, range: LinearRange) -> (ButtplugTestClient, Instant) {
         let client = get_test_client(vec![linear(1, "lin1")]).await;
 
         let mut config = ActuatorSettings::default();
-        config.update_device(ActuatorConfig { actuator_id: "lin1 (Position)".into(), enabled: true, body_parts: vec![], limits: ActuatorLimits::Linear(range.clone()) } );
+        config.update_device(ActuatorConfig { actuator_config_id: "lin1 (Position)".into(), enabled: true, body_parts: vec![], limits: ActuatorLimits::Linear(range.clone()) } );
 
         let actuators = client.created_devices.flatten_actuators().load_config(&mut config).clone();
         let mut test = PlayerTest::setup(actuators);
@@ -417,7 +416,7 @@ mod tests {
         // act
         let start = Instant::now();
         let duration_ms = range.max_ms as f64 * 2.5;
-        let player = test.get_player_with_settings( -1);
+        let player = test.get_player_with_settings(-1);
         let _ = player
             .play_linear_stroke(Duration::from_millis(duration_ms as u64), speed, LinearRange::max())
             .await;

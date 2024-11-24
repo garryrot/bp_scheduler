@@ -117,7 +117,7 @@ pub(crate) mod settings_tests {
         settings.set_enabled("a", true);
         let enabled_devices = settings.get_enabled_devices();
         assert_eq!(enabled_devices.len(), 1);
-        assert_eq!(enabled_devices[0].actuator_id, "a");
+        assert_eq!(enabled_devices[0].actuator_config_id, "a");
 
         settings.set_enabled("a", false);
         assert_eq!(settings.get_enabled_devices().len(), 0);
@@ -137,7 +137,7 @@ pub(crate) mod settings_tests {
     fn enable_unknown_device() {
         let mut settings = ActuatorSettings::default();
         settings.set_enabled("foobar", true);
-        assert_eq!(settings.get_enabled_devices()[0].actuator_id, "foobar");
+        assert_eq!(settings.get_enabled_devices()[0].actuator_config_id, "foobar");
     }
 
     #[test]

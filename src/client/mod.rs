@@ -4,7 +4,6 @@ use std::{
     time::Instant,
 };
 
-use actuator::ActuatorConfigLoader;
 use actuators::ActuatorSettings;
 use anyhow::anyhow;
 use anyhow::Error;
@@ -32,11 +31,11 @@ use util::trim_lower_str_list;
 use crate::filter::Filter;
 use crate::*;
 
-use config::client::*;
-use read::read_config_dir;
-use pattern::read_pattern;
 use actions::*;
+use config::client::*;
 use config::linear::*;
+use pattern::read_pattern;
+use read::read_config_dir;
 
 #[cfg(feature = "testing")]
 use bp_fakes::FakeDeviceConnector;
@@ -69,7 +68,7 @@ impl BpClient {
     pub fn connect_with<T, Fn, Fut>(
         connect_action: Fn,
         client_settings: Option<ClientSettings>,
-        device_settings: Option<ActuatorSettings>
+        device_settings: Option<ActuatorSettings>,
     ) -> Result<BpClient, anyhow::Error>
     where
         Fn: FnOnce() -> Fut + Send + 'static,
@@ -133,7 +132,10 @@ fn in_process_connector(
 }
 
 impl BpClient {
-    pub fn connect(settings: ClientSettings, actuator_settings: ActuatorSettings) -> Result<BpClient, Error> {
+    pub fn connect(
+        settings: ClientSettings,
+        actuator_settings: ActuatorSettings,
+    ) -> Result<BpClient, Error> {
         let settings_clone = settings.clone();
         match settings.connection {
             ConnectionType::WebSocket(endpoint) => {
@@ -141,13 +143,13 @@ impl BpClient {
                 BpClient::connect_with(
                     || async move { new_json_ws_client_connector(&uri) },
                     Some(settings_clone),
-                    Some(actuator_settings)
+                    Some(actuator_settings),
                 )
             }
             ConnectionType::InProcess => BpClient::connect_with(
                 move || async move { in_process_connector(settings.in_process_features) },
                 Some(settings),
-                Some(actuator_settings)
+                Some(actuator_settings),
             ),
             ConnectionType::Test => get_test_connection(settings),
         }
@@ -226,11 +228,12 @@ impl BpClient {
 
     pub fn dispatch_refs(
         &mut self,
-        actions: Vec<(Strength,Action)>,
+        actions: Vec<(Strength, Action)>,
         body_parts: Vec<String>,
         speed: Speed,
         duration: Duration,
     ) -> i32 {
+        info!(?actions, "dispatch_refs");
         let mut handle = -1;
         for action in actions {
             let strength = action.0.multiply(&speed);
@@ -250,7 +253,7 @@ impl BpClient {
                     strength.clone(),
                     duration,
                     handle,
-                    action_name
+                    action_name,
                 );
             }
         }
@@ -263,23 +266,32 @@ impl BpClient {
         strength: Strength,
         duration: Duration,
         handle: i32,
-        action: String // just for diagnosis
+        action: String, // just for diagnosis
     ) -> i32 {
+        info!(handle, "dispatch");
         self.scheduler.clean_finished_tasks();
-        let body_parts = trim_lower_str_list(&control.get_selector().as_vec().iter().map(|x| x.as_str()).collect::<Vec<_>>());
-        let (updated_settings, actuators) = Filter::new(self.device_settings.clone(), &self.buttplug.devices())
-            .connected()
-            .enabled()
-            .with_actuator_types(&control.get_actuators())
-            .with_body_parts(&body_parts)
-            .result();
+        let body_parts = trim_lower_str_list(
+            &control
+                .get_selector()
+                .as_vec()
+                .iter()
+                .map(|x| x.as_str())
+                .collect::<Vec<_>>(),
+        );
+        info!(?body_parts);
+        let (updated_settings, actuators) =
+            Filter::new(self.device_settings.clone(), &self.buttplug.devices())
+                .load_config(&mut self.device_settings)
+                .connected()
+                .enabled()
+                .with_actuator_types(&control.get_actuators())
+                .with_body_parts(&body_parts)
+                .result();
 
         self.device_settings = updated_settings;
         let pattern_path = self.settings.pattern_path.clone();
 
-        let player = self
-            .scheduler
-            .create_player(actuators.load_config(&mut self.device_settings), handle);
+        let player = self.scheduler.create_player(actuators, handle);
         let handle = player.handle;
 
         self.runtime.spawn(async move {
@@ -288,7 +300,7 @@ impl BpClient {
             let actuators = &player.actuators;
             let sp = span!(Level::INFO, "dispatching", handle, action);
             info!(?actuators, ?body_parts);
-            async move {    
+            async move {
                 let result = match control {
                     Control::Scalar(_, _) => match strength {
                         Strength::Constant(speed) => {
@@ -332,9 +344,7 @@ impl BpClient {
                                 }
                             }
                         }
-                        Strength::Variable(arc) => {
-                            player.play_scalar_var(duration, arc).await
-                        },
+                        Strength::Variable(arc) => player.play_scalar_var(duration, arc).await,
                     },
                     Control::Stroke(_, range) => match strength {
                         Strength::Constant(speed) => {
@@ -388,27 +398,24 @@ impl BpClient {
                             }
                         }
                         Strength::Variable(_) => panic!("dynamic not supported"),
-                    }
+                    },
                 };
                 info!(handle, "done");
                 match result {
                     Ok(()) => {
                         info!(
-                            "action done {:?} {:?}",
-                            now.elapsed(),
-                            handle
+                            handle, elapsed=?now.elapsed(), "action done"
                         );
                     }
                     Err(err) => {
                         error!(
-                            "action error {:?} {:?} {:?}",
-                            err,
-                            now.elapsed(),
-                            handle
+                            handle, elapsed=?now.elapsed(), ?err, "action errored"
                         )
                     }
                 };
-            }.instrument(sp).await;
+            }
+            .instrument(sp)
+            .await;
         });
 
         handle
@@ -466,19 +473,14 @@ mod tests {
         actuators: &[ScalarActuator],
     ) -> i32 {
         tk.actions = Actions(vec![]);
-        let x = (strength, Action::new(
-            "foobar",
-            vec![Control::Scalar(
-                Selector::All,
-                actuators.to_vec(),
-            )],
-        ));
-        tk.dispatch_refs(
-            vec![x],
-            body_parts,
-            Speed::max(),
-            duration,
-        )
+        let x = (
+            strength,
+            Action::new(
+                "foobar",
+                vec![Control::Scalar(Selector::All, actuators.to_vec())],
+            ),
+        );
+        tk.dispatch_refs(vec![x], body_parts, Speed::max(), duration)
     }
 
     #[test]
@@ -588,10 +590,9 @@ mod tests {
                 scalar(3, "vib3", ActuatorType::Vibrate),
             ],
             None,
-            None
+            None,
         );
-        tk.device_settings
-            .set_enabled("vib2 (Vibrate)", false);
+        tk.device_settings.set_enabled("vib2 (Vibrate)", false);
 
         // act
         test_cmd(
@@ -612,23 +613,20 @@ mod tests {
         call_registry.assert_unused(2);
     }
 
-    
     #[test]
     fn settings_only_move_selected_actuators() {
         // arrange
         let (mut tk, call_registry) = wait_for_connection(
             vec![
                 scalar(1, "vib1", ActuatorType::Vibrate),
-                scalar(2, "vib2", ActuatorType::Inflate)
+                scalar(2, "vib2", ActuatorType::Inflate),
             ],
             None,
-            None
+            None,
         );
-        tk.device_settings
-            .set_enabled("vib1 (Vibrate)", true);
-        tk.device_settings
-            .set_enabled("vib2 (Inflate)", true);
-        
+        tk.device_settings.set_enabled("vib1 (Vibrate)", true);
+        tk.device_settings.set_enabled("vib2 (Inflate)", true);
+
         // act
         test_cmd(
             &mut tk,
@@ -663,9 +661,18 @@ mod tests {
         vibration_pattern: bool,
     ) -> (BpClient, i32) {
         let pattern_path = "TODO/Define/Me";
-        let mut tk =
-            BpClient::connect_with(|| async move { in_process_connector(InProcessFeatures { bluetooth: true, serial: false, xinput: false }) }, None, None)
-                .unwrap();
+        let mut tk = BpClient::connect_with(
+            || async move {
+                in_process_connector(InProcessFeatures {
+                    bluetooth: true,
+                    serial: false,
+                    xinput: false,
+                })
+            },
+            None,
+            None,
+        )
+        .unwrap();
         tk.scan_for_devices();
         tk.await_connect(1);
         thread::sleep(Duration::from_secs(2));
@@ -699,8 +706,7 @@ mod tests {
         thread::sleep(Duration::from_secs(5));
         assert!(tk.connection_result.is_ok());
         for actuator in tk.buttplug.devices().flatten_actuators() {
-            tk.device_settings
-                .set_enabled(actuator.device.name(), true);
+            tk.device_settings.set_enabled(actuator.device.name(), true);
         }
         test_cmd(
             &mut tk,
@@ -715,7 +721,10 @@ mod tests {
 
     #[test]
     fn intiface_not_available_connection_status_error() {
-        let settings = ClientSettings { connection: ConnectionType::WebSocket(String::from("bogushost:6572")), ..Default::default() };
+        let settings = ClientSettings {
+            connection: ConnectionType::WebSocket(String::from("bogushost:6572")),
+            ..Default::default()
+        };
         let tk = BpClient::connect(settings, ActuatorSettings::default()).unwrap();
         tk.scan_for_devices();
         thread::sleep(Duration::from_secs(5));
@@ -730,8 +739,7 @@ mod tests {
     fn settings_are_trimmed_and_lowercased() {
         let (mut tk, call_registry) =
             wait_for_connection(vec![scalar(1, "vib1", ActuatorType::Vibrate)], None, None);
-        tk.device_settings
-            .set_enabled("vib1 (Vibrate)", true);
+        tk.device_settings.set_enabled("vib1 (Vibrate)", true);
         tk.device_settings
             .set_body_parts("vib1 (Vibrate)", &[" SoMe EvEnT    "]);
         test_cmd(
@@ -757,7 +765,7 @@ mod tests {
                 scalar(2, "vib2", ActuatorType::Inflate),
             ],
             None,
-            None
+            None,
         );
 
         // assert
@@ -791,7 +799,7 @@ mod tests {
     fn events_get() {
         let empty: Vec<String> = vec![];
         let one_event = &["evt2"];
-        let two_events = &["evt2","evt3"];
+        let two_events = &["evt2", "evt3"];
 
         let (mut tk, _) = wait_for_connection(
             vec![
@@ -799,7 +807,8 @@ mod tests {
                 scalar(2, "vib2", ActuatorType::Vibrate),
                 scalar(3, "vib3", ActuatorType::Vibrate),
             ],
-            None, None
+            None,
+            None,
         );
 
         tk.device_settings.set_body_parts("vib2", one_event);
@@ -817,7 +826,8 @@ mod tests {
                 scalar(1, "vib1", ActuatorType::Vibrate),
                 scalar(2, "vib2", ActuatorType::Vibrate),
             ],
-            None, None
+            None,
+            None,
         );
         tk.device_settings
             .set_body_parts("vib1 (Vibrate)", &["selected_event"]);
@@ -843,8 +853,7 @@ mod tests {
     fn event_is_trimmed_and_ignores_casing() {
         let (mut tk, call_registry) =
             wait_for_connection(vec![scalar(1, "vib1", ActuatorType::Vibrate)], None, None);
-        tk.device_settings
-            .set_enabled("vib1 (Vibrate)", true);
+        tk.device_settings.set_enabled("vib1 (Vibrate)", true);
         tk.device_settings
             .set_body_parts("vib1 (Vibrate)", &["some event"]);
         test_cmd(
@@ -864,7 +873,7 @@ mod tests {
     fn wait_for_connection(
         devices: Vec<DeviceAdded>,
         settings: Option<ClientSettings>,
-        device_settings: Option<ActuatorSettings>
+        device_settings: Option<ActuatorSettings>,
     ) -> (BpClient, FakeConnectorCallRegistry) {
         let (connector, call_registry) = FakeDeviceConnector::new(devices);
         let count = connector.devices.len();
@@ -872,26 +881,31 @@ mod tests {
         // act
         let mut settings = settings.unwrap_or_default();
         settings.pattern_path = String::from("../deploy/Data/SKSE/Plugins/BpClient/Patterns");
-        let mut tk = BpClient::connect_with(|| async move { connector }, Some(settings), device_settings).unwrap();
+        let mut tk =
+            BpClient::connect_with(|| async move { connector }, Some(settings), device_settings)
+                .unwrap();
         tk.await_connect(count);
 
         let actuators = tk.buttplug.devices().flatten_actuators();
         for actuator in actuators {
-            tk.device_settings
-                .set_enabled(actuator.identifier(), true);
+            tk.device_settings.set_enabled(actuator.identifier(), true);
         }
         (tk, call_registry)
     }
 
-    fn get_known_actuator_ids(devices: Vec<Arc<ButtplugClientDevice>>, settings: &ActuatorSettings) -> Vec<String> {
-        let known_actuators : Vec<String> = settings
-                .0
-                .iter()
-                .map(|x| x.actuator_id.clone())
-                .collect();
-    
+    fn get_known_actuator_ids(
+        devices: Vec<Arc<ButtplugClientDevice>>,
+        settings: &ActuatorSettings,
+    ) -> Vec<String> {
+        let known_actuators: Vec<String> = settings
+            .0
+            .iter()
+            .map(|x| x.actuator_config_id.clone())
+            .collect();
+
         let known_ids = known_actuators.clone();
-        devices.flatten_actuators()
+        devices
+            .flatten_actuators()
             .iter()
             .map(|x| String::from(x.identifier()))
             .chain(known_ids)
