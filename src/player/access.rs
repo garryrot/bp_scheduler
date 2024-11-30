@@ -2,7 +2,7 @@ use buttplug::client::{ButtplugClientError, ScalarCommand};
 use std::collections::HashMap;
 
 use std::sync::Arc;
-use tracing::{debug, error, trace, instrument};
+use tracing::{error, trace, instrument};
 
 use crate::{actuator::Actuator, speed::Speed};
 
@@ -11,7 +11,7 @@ use crate::{actuator::Actuator, speed::Speed};
 pub struct DeviceEntry {
     /// The amount of tasks that currently access this device,
     pub task_count: usize,
-    /// Priority calculation work like a stack with the top of the stack
+    /// Priority calculation works like a stack with the top of the stack
     /// task being the used vibration speed
     pub linear_tasks: Vec<(i32, Speed)>,
 }
@@ -74,7 +74,7 @@ impl DeviceAccess {
             if count == 0 {
                 // nothing else is controlling the device, stop it
                 return self.set_scalar(actuator, Speed::min()).await;
-            } else if let Some(last_speed) = self.get_priority_speed(actuator.clone()) {
+            } else if let Some(last_speed) = self.calculate_speed(actuator.clone()) {
                 let _ = self.set_scalar(actuator, last_speed).await;
             }
         }
@@ -94,7 +94,7 @@ impl DeviceAccess {
                 }).collect()
             });
         }
-        let speed = self.get_priority_speed(actuator.clone()).unwrap_or(new_speed);
+        let speed = self.calculate_speed(actuator.clone()).unwrap_or(new_speed);
         trace!("updating {} speed to {}", actuator, speed);
         let _ = self.set_scalar(actuator, speed).await;
     }
@@ -117,12 +117,12 @@ impl DeviceAccess {
         Ok(())
     }
 
-    fn get_priority_speed(&self, actuator: Arc<Actuator>) -> Option<Speed> {
+    fn calculate_speed(&self, actuator: Arc<Actuator>) -> Option<Speed> {
+        // concurrency-strategy: always use the highest existing value
         if let Some(entry) = self.device_actions.get(&actuator.into()) {
-            let mut sorted: Vec<(i32, Speed)> = entry.linear_tasks.clone();
-            sorted.sort_by_key(|b| b.0);
-            if let Some(tuple) = sorted.last() {
-                return Some(tuple.1);
+            // let mut sorted: Vec<(i32, Speed)> = entry.linear_tasks.clone();
+            if let Some(percentage) = entry.linear_tasks.iter().map(|x| x.1.value).max() {
+                return Some(Speed::new(percentage.into()));
             }
         }
         None

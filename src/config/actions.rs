@@ -23,11 +23,13 @@ impl ActionRef {
     }
 }
 
+// TODO: This struct needs to disapper from bp_scheduler and move somewhere else
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Variable {
-    PlayerActorValue(String), // TODO: This needs to disappear
+    PlayerActorValue(String),
     BoneTrackingRate,
-    BoneTrackingDepth
+    BoneTrackingDepth,
+    BoneTrackingPos,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

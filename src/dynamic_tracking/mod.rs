@@ -1,8 +1,9 @@
-use std::sync::{atomic::AtomicI64, Arc};
+use std::sync::{atomic::{AtomicI64, Ordering}, Arc};
 
 use derive_new::new;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::mpsc::UnboundedReceiver, time::Instant};
+use tokio_util::sync::CancellationToken;
 
 use crate::actuator::Actuator;
 
@@ -53,10 +54,37 @@ impl Default for DynamicSettings {
     }
 }
 
+// TODO Rename to BoneTrackingAction
 pub struct DynamicTracking {
     pub settings: DynamicSettings,
     pub signals: UnboundedReceiver<TrackingSignal>,
     pub actuators: Vec<Arc<Actuator>>,
+    pub status: DynamicTrackingHandle
+}
+
+// TODO: Rename to BoneTracking
+#[derive(Clone, Debug)]
+pub struct DynamicTrackingHandle {
+    pub cancel: Option<CancellationToken>,
     pub cur_avg_ms: Arc<AtomicI64>,
-    pub cur_depth: Arc<AtomicI64>
+    pub cur_avg_depth: Arc<AtomicI64>,
+    pub cur_pos: Arc<AtomicI64>
+}
+
+impl DynamicTrackingHandle {
+    pub fn reset(&mut self) {
+        self.cur_avg_ms.store(0, Ordering::Relaxed);
+        self.cur_avg_depth.store(0, Ordering::Relaxed);
+    }
+}
+
+impl Default for DynamicTrackingHandle {
+    fn default() -> Self {
+        Self { 
+            cancel: None, 
+            cur_avg_ms: Arc::new(AtomicI64::new(0)), 
+            cur_avg_depth: Arc::new(AtomicI64::new(0)),
+            cur_pos: Arc::new(AtomicI64::new(0)),
+        }
+    }
 }

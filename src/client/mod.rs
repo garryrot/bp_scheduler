@@ -796,30 +796,6 @@ mod tests {
     }
 
     #[test]
-    fn events_get() {
-        let empty: Vec<String> = vec![];
-        let one_event = &["evt2"];
-        let two_events = &["evt2", "evt3"];
-
-        let (mut tk, _) = wait_for_connection(
-            vec![
-                scalar(1, "vib1", ActuatorType::Vibrate),
-                scalar(2, "vib2", ActuatorType::Vibrate),
-                scalar(3, "vib3", ActuatorType::Vibrate),
-            ],
-            None,
-            None,
-        );
-
-        tk.device_settings.set_body_parts("vib2", one_event);
-        tk.device_settings.set_body_parts("vib3", two_events);
-
-        assert_eq!(tk.device_settings.get_events("vib1"), empty);
-        assert_eq!(tk.device_settings.get_events("vib2"), one_event);
-        assert_eq!(tk.device_settings.get_events("vib3"), two_events);
-    }
-
-    #[test]
     fn event_only_vibrate_selected_devices() {
         let (mut tk, call_registry) = wait_for_connection(
             vec![

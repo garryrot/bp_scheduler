@@ -30,8 +30,9 @@ impl DynamicTracking {
         let mut last_pen = None;
         let mut meas = Movements::new(self.settings.stroke_default_ms, self.settings.stroke_max_ms);
 
-        // bad actually, because there is no guaranetee that Instant
-        // can go several seconds into the past but it just seems to work
+        // this might crash somewhere because there is no guaranetee that Instant
+        // can go 20 seconds into the past but I'm just gonna gamble that 
+        // the cpu has at least 20s worth of cycles whenever this is called
         let mut last_turn = Instant::now() - Duration::from_secs(20);
         let mut last_pos = 0.0;
         let mut moving_inward = true;
@@ -45,7 +46,7 @@ impl DynamicTracking {
                         if moving_inward {
                             error!("not moving outward");
                         } else if !self.below_min_resolution(last_turn, instant) {
-                            info!("moving inward");
+                            debug!("moving inward");
                             last_turn = instant;
                             moving_inward = true;
                             if penetrating(&last_pen) {
@@ -59,6 +60,7 @@ impl DynamicTracking {
                                     self.settings.stroke_min_ms,
                                 );
 
+                                self.set_var_pen_pos(target_pos);
                                 self.set_var_pen_speed(estimated_dur);
                                 self.set_var_pen_depth(target_pos - last_pos);
                                 self.move_devices(estimated_dur, target_pos).await;
@@ -70,7 +72,7 @@ impl DynamicTracking {
                         if !moving_inward {
                             error!("not moving inward");
                         } else if !self.below_min_resolution(last_turn, instant) {
-                            info!("moving outward");
+                            debug!("moving outward");
                             last_turn = instant;
                             moving_inward = false;
                             if penetrating(&last_pen) {
@@ -84,6 +86,7 @@ impl DynamicTracking {
                                     self.settings.stroke_min_ms,
                                 );
 
+                                self.set_var_pen_pos(target_pos);
                                 self.set_var_pen_depth(target_pos - last_pos);
                                 self.set_var_pen_speed(estimated_dur);
                                 self.move_devices(estimated_dur, target_pos).await;
@@ -105,10 +108,15 @@ impl DynamicTracking {
         }
     }
 
+    fn set_var_pen_pos(&self, depth: f64) {
+        debug!(depth, "setting var current pos");
+        self.status.cur_pos.store(f64::abs((1.0 - depth) * 100.0) as i64, Ordering::Relaxed);
+    }
+
     fn set_var_pen_depth(&self, depth: f64) {
         let dept = f64::abs(depth) * 100.0;
-        self.cur_depth
-            .store(f64::abs(dept) as i64, Ordering::Relaxed);
+        self.status.cur_avg_depth
+                    .store(f64::abs(dept) as i64, Ordering::Relaxed);
     }
 
     fn set_var_pen_speed(&self, estimated_dur: u32) {
@@ -120,7 +128,7 @@ impl DynamicTracking {
             let x = 1.0 - (ms_to_min / max_ms);
             (x * x) * 100.0
         };
-        self.cur_avg_ms.store(val as i64, Ordering::Relaxed);
+        self.status.cur_avg_ms.store(val as i64, Ordering::Relaxed);
     }
 
     async fn move_devices(&self, estimated_dur: u32, last_pos: f64) {
@@ -185,8 +193,7 @@ mod tests {
             },
             signals: receiver,
             actuators,
-            cur_avg_ms: Arc::new(AtomicI64::new(0)),
-            cur_depth: Arc::new(AtomicI64::new(0)),
+            status: DynamicTrackingHandle::default()
         };
         (test_client, sender, tracking)
     }
