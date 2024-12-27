@@ -16,16 +16,16 @@ impl DynamicTracking {
             None => false,
         };
 
+        self.set_var_pen_depth(0.0);
+        self.set_var_pen_speed(self.settings.stroke_max_ms);
+
         if self.settings.move_at_start {
             self.move_devices(
                 self.settings.stroke_default_ms,
-                self.settings.stroke_default_in,
+                self.settings.starting_position,
             )
             .await;
         }
-
-        // self.set_var_pen_depth(0.1);
-        // self.set_var_pen_speed(self.settings.stroke_max_ms - 1);
 
         let mut last_pen = None;
         let mut meas = Movements::new(self.settings.stroke_default_ms, self.settings.stroke_max_ms);
@@ -55,7 +55,7 @@ impl DynamicTracking {
                                 let estimated_dur = meas.get_avg_ms();
                                 let target_pos: f64 = limit_speed(
                                     last_pos,
-                                    margins.most_out,
+                                     margins.most_in,
                                     estimated_dur,
                                     self.settings.stroke_min_ms,
                                 );
@@ -81,7 +81,7 @@ impl DynamicTracking {
                                 let estimated_dur = meas.get_avg_ms();
                                 let target_pos = limit_speed(
                                     last_pos,
-                                    margins.most_in,
+                                    margins.most_out,
                                     estimated_dur,
                                     self.settings.stroke_min_ms,
                                 );
@@ -185,8 +185,7 @@ mod tests {
                 min_resolution_ms: 50,
                 stroke_min_ms: 200,
                 stroke_default_ms: 400,
-                stroke_default_in: 0.0,
-                stroke_default_out: 1.0,
+                starting_position: 0.0,
                 stroke_max_ms: 3_000,
                 sample_ms: 50,
                 initial_timeout_ms: 1200,

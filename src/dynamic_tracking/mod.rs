@@ -28,14 +28,13 @@ pub enum TrackingSignal {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DynamicSettings {
     pub move_at_start: bool,
+    pub starting_position: f64,
     pub min_resolution_ms: u32,
     pub stroke_min_ms: u32,
     pub stroke_max_ms: u32,
     pub sample_ms: u64,
     pub initial_timeout_ms: u64,
-    pub stroke_default_ms: u32,
-    pub stroke_default_in: f64,
-    pub stroke_default_out: f64
+    pub stroke_default_ms: u32
 }
 
 impl Default for DynamicSettings {
@@ -47,8 +46,7 @@ impl Default for DynamicSettings {
             stroke_max_ms: 2_000,
             sample_ms: 50,
             stroke_default_ms: 400,
-            stroke_default_in: 0.0,
-            stroke_default_out: 1.0,
+            starting_position: 1.0,
             initial_timeout_ms: 800,
         }
     }
