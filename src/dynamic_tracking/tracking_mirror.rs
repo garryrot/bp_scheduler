@@ -57,7 +57,7 @@ impl DynamicTracking {
                                     last_pos,
                                      margins.most_in,
                                     estimated_dur,
-                                    self.settings.stroke_min_ms,
+                                    self.settings.min_ms_for_full_stroke,
                                 );
 
                                 self.set_var_pen_pos(target_pos);
@@ -83,7 +83,7 @@ impl DynamicTracking {
                                     last_pos,
                                     margins.most_out,
                                     estimated_dur,
-                                    self.settings.stroke_min_ms,
+                                    self.settings.min_ms_for_full_stroke,
                                 );
 
                                 self.set_var_pen_pos(target_pos);
@@ -120,11 +120,11 @@ impl DynamicTracking {
     }
 
     fn set_var_pen_speed(&self, estimated_dur: u32) {
-        let val = if estimated_dur < self.settings.stroke_min_ms {
+        let val = if estimated_dur < self.settings.min_ms_for_full_stroke {
             1.0
         } else {
-            let ms_to_min = (estimated_dur - self.settings.stroke_min_ms) as f32;
-            let max_ms = (self.settings.stroke_max_ms - self.settings.stroke_min_ms) as f32;
+            let ms_to_min = (estimated_dur - self.settings.min_ms_for_full_stroke) as f32;
+            let max_ms = (self.settings.stroke_max_ms - self.settings.min_ms_for_full_stroke) as f32;
             let x = 1.0 - (ms_to_min / max_ms);
             (x * x) * 100.0
         };
@@ -183,12 +183,12 @@ mod tests {
             settings: DynamicSettings {
                 move_at_start: false,
                 min_resolution_ms: 50,
-                stroke_min_ms: 200,
+                min_ms_for_full_stroke: 200, // lmits speed
                 stroke_default_ms: 400,
                 starting_position: 0.0,
                 stroke_max_ms: 3_000,
-                sample_ms: 50,
-                initial_timeout_ms: 1200,
+                sampling_rate_ms: 50,
+                initial_timeout_ms: 1200
             },
             signals: receiver,
             actuators,

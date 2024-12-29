@@ -154,6 +154,7 @@ impl ButtplugScheduler {
 
 }
 
+
 async fn cancellable_wait(duration: Duration, cancel: &CancellationToken) -> bool {
     tokio::select! {
         _ = cancel.cancelled() => {

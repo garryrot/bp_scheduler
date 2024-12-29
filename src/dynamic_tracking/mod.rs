@@ -30,23 +30,23 @@ pub struct DynamicSettings {
     pub move_at_start: bool,
     pub starting_position: f64,
     pub min_resolution_ms: u32,
-    pub stroke_min_ms: u32,
+    pub min_ms_for_full_stroke: u32,
     pub stroke_max_ms: u32,
-    pub sample_ms: u64,
+    pub sampling_rate_ms: u64,
     pub initial_timeout_ms: u64,
-    pub stroke_default_ms: u32
+    pub stroke_default_ms: u32,
 }
 
 impl Default for DynamicSettings {
     fn default() -> Self {
         DynamicSettings {
             move_at_start: true,
-            min_resolution_ms: 80,
-            stroke_min_ms: 200,
-            stroke_max_ms: 2_000,
-            sample_ms: 50,
-            stroke_default_ms: 400,
             starting_position: 1.0,
+            min_resolution_ms: 80,
+            min_ms_for_full_stroke: 200,
+            stroke_max_ms: 2_000,
+            sampling_rate_ms: 50,
+            stroke_default_ms: 400,
             initial_timeout_ms: 800,
         }
     }
