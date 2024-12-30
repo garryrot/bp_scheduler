@@ -109,6 +109,11 @@ impl BpClient {
     }
 }
 
+pub struct DispatchResult {
+    pub handle: i32,
+    pub actions: Vec<(String, Vec<Arc<Actuator>>)>
+}
+
 fn in_process_connector(
     features: InProcessFeatures,
 ) -> impl ButtplugConnector<ButtplugCurrentSpecClientMessage, ButtplugCurrentSpecServerMessage> {
@@ -232,16 +237,18 @@ impl BpClient {
         body_parts: Vec<String>,
         speed: Speed,
         duration: Duration,
-    ) -> i32 {
+    ) -> DispatchResult {
         info!(?actions, "dispatch_refs");
         let mut handle = -1;
+        let mut started_actions = vec![];
         for action in actions {
             let strength = action.0.multiply(&speed);
             for control in action.1.control.clone() {
                 let ext_selector = Selector::from(&body_parts);
+                let used_actuators;
 
                 let action_name = action.1.name.clone();
-                handle = self.dispatch(
+                (handle, used_actuators) = self.dispatch(
                     match control {
                         Control::Scalar(selector, actuators) => {
                             Control::Scalar(selector.and(ext_selector), actuators)
@@ -253,11 +260,16 @@ impl BpClient {
                     strength.clone(),
                     duration,
                     handle,
-                    action_name,
+                    action_name.clone(),
                 );
+                started_actions.push( (action_name, used_actuators ) );
             }
         }
-        handle
+
+        DispatchResult {
+            handle,
+            actions: started_actions
+        }
     }
 
     pub fn dispatch(
@@ -266,8 +278,8 @@ impl BpClient {
         strength: Strength,
         duration: Duration,
         handle: i32,
-        action: String, // just for diagnosis
-    ) -> i32 {
+        action_name: String, // just for diagnosis
+    ) -> (i32, Vec<Arc<Actuator>>) {
         info!(handle, "dispatch");
         self.scheduler.clean_finished_tasks();
         let body_parts = trim_lower_str_list(
@@ -287,6 +299,7 @@ impl BpClient {
                 .with_actuator_types(&control.get_actuators())
                 .with_body_parts(&body_parts)
                 .result();
+        let ret_actuators = actuators.clone();
 
         self.device_settings = updated_settings;
         let pattern_path = self.settings.pattern_path.clone();
@@ -298,7 +311,7 @@ impl BpClient {
             let now = Instant::now();
             let handle = player.handle;
             let actuators = &player.actuators;
-            let sp = span!(Level::INFO, "dispatching", handle, action);
+            let sp = span!(Level::INFO, "dispatching", handle, action_name);
             info!(?actuators, ?body_parts);
             async move {
                 let result = match control {
@@ -418,7 +431,7 @@ impl BpClient {
             .await;
         });
 
-        handle
+        (handle, ret_actuators)
     }
 }
 
