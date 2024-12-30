@@ -74,7 +74,6 @@ impl Display for Strength {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Action {
     pub name: String,
-    pub do_bone_tracking: bool,
     pub control: Vec<Control>
 }
 
@@ -82,15 +81,6 @@ impl Action {
     pub fn new(name: &str, control: Vec<Control>) -> Self {
         Action {
             name: name.into(),
-            do_bone_tracking: false,
-            control
-        }
-    }
-
-    pub fn new_with_bone(name: &str, control: Vec<Control>) -> Self {
-        Action {
-            name: name.into(),
-            do_bone_tracking: true,
             control
         }
     }
