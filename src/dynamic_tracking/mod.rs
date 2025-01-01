@@ -73,6 +73,7 @@ impl DynamicTrackingHandle {
     pub fn reset(&mut self) {
         self.cur_avg_ms.store(0, Ordering::Relaxed);
         self.cur_avg_depth.store(0, Ordering::Relaxed);
+        self.cur_pos.store(0, Ordering::Relaxed);
     }
 }
 
@@ -82,7 +83,7 @@ impl Default for DynamicTrackingHandle {
             cancel: None, 
             cur_avg_ms: Arc::new(AtomicI64::new(0)), 
             cur_avg_depth: Arc::new(AtomicI64::new(0)),
-            cur_pos: Arc::new(AtomicI64::new(0)),
+            cur_pos: Arc::new(AtomicI64::new(0))
         }
     }
 }
