@@ -3,7 +3,7 @@ use std::sync::Arc;
 use buttplug::{client::ButtplugClientDevice, core::message::ActuatorType};
 use tracing::{debug, error};
 
-use crate::{actuator::{Actuator, ActuatorConfigLoader, Actuators}, actuators::ActuatorConfig};
+use crate::{actions::Selector, actuator::{Actuator, ActuatorConfigLoader, Actuators}, actuators::ActuatorConfig};
 
 use super::actuators::ActuatorSettings;
 
@@ -55,16 +55,14 @@ impl Filter {
         self
     }
 
-    pub fn with_body_parts(mut self, body_parts: &[String]) -> Self {
-        if !body_parts.is_empty() {
-            self.actuators.retain(|x| {
-                if let Some(c) =  &x.config {
-                    return c.body_parts.iter().any( |x| body_parts.contains(x))
-                }
-                error!("settings not initialised");
-                false
-            });
-        }
+    pub fn with_selector(mut self, selector: &Selector) -> Self {
+        self.actuators.retain(|x| {
+            if let Some(c) = &x.config {
+                return selector.matches(&c.body_parts)
+            }
+            error!("settings not initialised");
+            false
+        });
         self
     }
 

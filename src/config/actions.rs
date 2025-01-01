@@ -109,38 +109,41 @@ impl Control {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Selector {
-    All,
-    BodyParts(Vec<String>),
+    Any,
+    NotTag(String),
+    Tag(String),
+    And(Vec<Box<Selector>>),
+    Or(Vec<Box<Selector>>),
 }
 
 impl Selector {
+    pub fn body_parts(tags: Vec<String>) -> Selector {
+        if tags.len() == 1 {
+            return Selector::Tag(tags[0].clone())
+        }
+        let mut selectors = vec![];
+        for tag in tags {
+            selectors.push(Box::new(Selector::Tag(tag.trim().to_lowercase())));
+        }
+        Selector::Or(selectors)
+    }
     pub fn from(tags: &Vec<String>) -> Self {
-        let mut result = Selector::All;
+        let mut result = Selector::Any;
         if !tags.is_empty() {
-            result = Selector::BodyParts(tags.clone());
+            result = Selector::body_parts(tags.clone());
         }
         result
     }
-    pub fn and(&self, selector: Selector) -> Selector {
-        match self {
-            Selector::All => match selector {
-                Selector::All => Selector::All,
-                Selector::BodyParts(vec) => Selector::BodyParts(vec),
-            },
-            Selector::BodyParts(vec) => match selector {
-                Selector::All => Selector::BodyParts(vec.clone()),
-                Selector::BodyParts(vec2) => {
-                    let mut a = vec.clone();
-                    a.extend(vec2);
-                    Selector::BodyParts(a)
-                },
-            },
-        }
+    pub fn and(self, other: Selector) -> Selector {
+        Selector::And(vec![Box::new(self), Box::new(other)])
     }
-    pub fn as_vec(&self) -> Vec<String> {
+    pub fn matches(&self, tags: &Vec<String>) -> bool {
         match self {
-            Selector::All => vec![],
-            Selector::BodyParts(vec) => vec.clone(),
+            Selector::Any => true,
+            Selector::NotTag(tag) => !tags.contains(tag),
+            Selector::Tag(tag) =>  tags.contains(&tag),
+            Selector::And(items) => items.iter().all(|x| x.matches(tags)),
+            Selector::Or(items) => items.iter().any(|x| x.matches(tags)),
         }
     }
 }
@@ -186,11 +189,11 @@ mod tests {
             "milkmod.milkingstage",
             vec![
                 Control::Scalar(
-                    Selector::BodyParts(vec!["nipple".into()]),
+                    Selector::body_parts(vec!["nipple".into()]),
                     vec![ScalarActuator::Vibrate, ScalarActuator::Constrict],
                 ),
                 Control::Scalar(
-                    Selector::BodyParts(vec!["anal".into()]),
+                    Selector::body_parts(vec!["anal".into()]),
                     vec![
                         ScalarActuator::Vibrate,
                         ScalarActuator::Constrict,
@@ -198,7 +201,7 @@ mod tests {
                     ],
                 ),
                 Control::Scalar(
-                    Selector::BodyParts(vec!["inflate".into()]),
+                    Selector::body_parts(vec!["inflate".into()]),
                     vec![ScalarActuator::Inflate],
                 ),
             ],
@@ -209,11 +212,11 @@ mod tests {
     #[test]
     pub fn serialize_and_deserialize_actions() {
         let a1 = Actions(vec![
-            Action::new("1", vec![Control::Scalar(Selector::All, vec![])]),
+            Action::new("1", vec![Control::Scalar(Selector::Any, vec![])]),
             Action::new(
                 "2",
                 vec![Control::Scalar(
-                    Selector::All,
+                    Selector::Any,
                     vec![ScalarActuator::Constrict],
                 )],
             ),
@@ -223,14 +226,14 @@ mod tests {
             Action::new(
                 "3",
                 vec![Control::Scalar(
-                    Selector::All,
+                    Selector::Any,
                     vec![ScalarActuator::Constrict],
                 )],
             ),
             Action::new(
                 "4",
                 vec![Control::Scalar(
-                    Selector::All,
+                    Selector::Any,
                     vec![ScalarActuator::Vibrate],
                 )],
             ),

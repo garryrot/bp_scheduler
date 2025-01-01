@@ -11,7 +11,6 @@ use super::{
     scalar::ScalarRange, ActuatorLimits
 };
 
-/// actuator sepcific settings
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ActuatorSettings(pub Vec<ActuatorConfig>);
 

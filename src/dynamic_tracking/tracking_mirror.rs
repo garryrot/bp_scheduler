@@ -11,7 +11,9 @@ impl DynamicTracking {
     pub async fn track_mirror(&mut self) {
         let penetrating = |pen_time: &Option<Instant>| match pen_time {
             Some(time) => {
-                (Instant::now() - *time) < Duration::from_millis(self.settings.stroke_max_ms.into())
+                let elapsed = Instant::now() - *time;
+                let max_ms = Duration::from_millis(self.settings.stroke_max_ms.into());
+                elapsed < max_ms 
             }
             None => false,
         };
@@ -224,9 +226,9 @@ mod tests {
     pub async fn mirror_movements_from_last_inward_as_outward() {
         let test = TestFixture::new().await;
         test.signal_penetration();
-        test.signal_inner(0, 0.8, 0.0);
-        test.signal_outer(200, 0.0, 0.1);
-        test.signal_inner(500, 0.9, 0.0);
+        test.signal_inner(0, 0.0, 0.8);
+        test.signal_outer(200, 0.1, 0.0);
+        test.signal_inner(500, 0.0, 0.9);
         let results = test.finish().await;
 
         let msgs = results.call_registry.get_device(1);
@@ -239,9 +241,9 @@ mod tests {
     pub async fn mirror_movements_too_fast_shortened() {
         let test = TestFixture::new().await;
         test.signal_penetration();
-        test.signal_inner(100, 1.0, 0.0);
+        test.signal_inner(100, 0.0, 1.0);
         test.signal_outer(200, 0.0, 0.0);
-        test.signal_inner(300, 1.0, 0.0);
+        test.signal_inner(300, 0.0, 1.0);
         let results = test.finish().await;
 
         let msgs = results.call_registry.get_device(1);
@@ -254,8 +256,8 @@ mod tests {
     pub async fn movements_below_min_resolutions_only_first_one_registered() {
         let test = TestFixture::new().await;
         test.signal_penetration();
-        test.signal_inner(10, 1.0, 0.0);
-        test.signal_outer(15, 0.0, 0.0);
+        test.signal_inner(10,  0.0, 1.0);
+        test.signal_outer(15,  0.0, 0.0);
         test.signal_outer(220, 0.0, 0.0);
         let results = test.finish().await;
 

@@ -26,7 +26,6 @@ use buttplug::{
         ButtplugServerBuilder,
     },
 };
-use util::trim_lower_str_list;
 
 use crate::filter::Filter;
 use crate::*;
@@ -282,22 +281,15 @@ impl BpClient {
     ) -> (i32, Vec<Arc<Actuator>>) {
         info!(handle, "dispatch");
         self.scheduler.clean_finished_tasks();
-        let body_parts = trim_lower_str_list(
-            &control
-                .get_selector()
-                .as_vec()
-                .iter()
-                .map(|x| x.as_str())
-                .collect::<Vec<_>>(),
-        );
-        info!(?body_parts);
+        let selector = control.get_selector();
+        info!(?selector);
         let (updated_settings, actuators) =
             Filter::new(self.device_settings.clone(), &self.buttplug.devices())
                 .load_config(&mut self.device_settings)
                 .connected()
                 .enabled()
                 .with_actuator_types(&control.get_actuators())
-                .with_body_parts(&body_parts)
+                .with_selector(&selector)
                 .result();
         let ret_actuators = actuators.clone();
 
@@ -312,7 +304,7 @@ impl BpClient {
             let handle = player.handle;
             let actuators = &player.actuators;
             let sp = span!(Level::INFO, "dispatching", handle, action_name);
-            info!(?actuators, ?body_parts);
+            info!(?actuators, ?selector);
             async move {
                 let result = match control {
                     Control::Scalar(_, _) => match strength {
@@ -490,10 +482,10 @@ mod tests {
             strength,
             Action::new(
                 "foobar",
-                vec![Control::Scalar(Selector::All, actuators.to_vec())],
+                vec![Control::Scalar(Selector::Any, actuators.to_vec())],
             ),
         );
-        tk.dispatch_refs(vec![x], body_parts, Speed::max(), duration)
+        tk.dispatch_refs(vec![x], body_parts, Speed::max(), duration).handle
     }
 
     #[test]
