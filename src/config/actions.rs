@@ -23,10 +23,9 @@ impl ActionRef {
     }
 }
 
-// TODO: This struct needs to disapper from bp_scheduler and move somewhere else
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Variable {
-    PlayerActorValue(String),
+    PlayerActorValue(String), // TODO: This entry needs to disapper from bp_scheduler and move somewhere else
     BoneTrackingRate,
     BoneTrackingDepth,
     BoneTrackingPos,
@@ -148,7 +147,6 @@ impl Selector {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ScalarActuator {
     Vibrate,
@@ -176,38 +174,16 @@ pub struct StrokeRange {
     pub max_pos: f64,
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::{config::client::settings_tests::*, read::read_config_dir};
+    use tempfile::TempDir;
 
+    use tokio_test::assert_ok;
+    use std::fs;
+    use crate::config::client::settings_tests::*;
+    use crate::config::util::read::read_config_dir;
+    
     use super::*;
-
-    #[test]
-    pub fn build_mm_actions() {
-        let actions = vec![Action::new(
-            "milkmod.milkingstage",
-            vec![
-                Control::Scalar(
-                    Selector::body_parts(vec!["nipple".into()]),
-                    vec![ScalarActuator::Vibrate, ScalarActuator::Constrict],
-                ),
-                Control::Scalar(
-                    Selector::body_parts(vec!["anal".into()]),
-                    vec![
-                        ScalarActuator::Vibrate,
-                        ScalarActuator::Constrict,
-                        ScalarActuator::Oscillate,
-                    ],
-                ),
-                Control::Scalar(
-                    Selector::body_parts(vec!["inflate".into()]),
-                    vec![ScalarActuator::Inflate],
-                ),
-            ],
-        )];
-        println!("{}", serde_json::to_string_pretty(&actions).unwrap());
-    }
 
     #[test]
     pub fn serialize_and_deserialize_actions() {
@@ -244,5 +220,9 @@ mod tests {
         let actions: Vec<Action> = read_config_dir(temp_dir);
         assert_eq!(actions.len(), 4);
         tmp_path.close().unwrap();
+    }
+
+    fn add_temp_file(name: &str, content: &str, tmp_path: &TempDir) {
+        assert_ok!(fs::write(tmp_path.path().join(name).clone(), content));
     }
 }

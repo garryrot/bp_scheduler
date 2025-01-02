@@ -1,8 +1,6 @@
 use std::fmt::{self, Display};
-use buttplug::core::message::LogLevel;
 use serde::{Deserialize, Serialize};
-
-use super::connection::ConnectionType;
+use tracing::Level;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct InProcessFeatures {
@@ -10,6 +8,35 @@ pub struct InProcessFeatures {
     pub serial: bool,
     pub xinput: bool
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum ConnectionType {
+    InProcess,
+    WebSocket(String),
+    Test,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum LogLevel {
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Warn = 3,
+    Error = 4,
+}
+
+impl From<LogLevel> for Level {
+    fn from(val: LogLevel) -> Self {
+        match val {
+            LogLevel::Trace => Level::TRACE,
+            LogLevel::Debug => Level::DEBUG,
+            LogLevel::Info => Level::INFO,
+            LogLevel::Warn => Level::WARN,
+            LogLevel::Error => Level::ERROR,
+        }
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoggingSettings {
@@ -58,7 +85,7 @@ impl Display for ConnectionType {
 pub(crate) mod settings_tests {
     use std::fs;
 
-    use crate::{actuators::{ActuatorConfig, ActuatorSettings}, read::read_or_default};
+    use crate::{actuators::{ActuatorConfig, ActuatorSettings}, config::util::read::read_or_default};
 
     use super::*;
     use tempfile::{tempdir, TempDir};
@@ -188,9 +215,5 @@ pub(crate) mod settings_tests {
         assert_ok!(fs::write(file_path.clone(), content));
 
         (path.into(), tmp_path.path().to_str().unwrap().into(), tmp_path)
-    }
-
-    pub fn add_temp_file(name: &str, content: &str, tmp_path: &TempDir) {
-        assert_ok!(fs::write(tmp_path.path().join(name).clone(), content));
     }
 }

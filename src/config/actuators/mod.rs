@@ -1,4 +1,6 @@
 use itertools::Itertools;
+use linear::{LinearRange, LinearSpeedScaling};
+use scalar::ScalarRange;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, instrument};
 
@@ -6,10 +8,8 @@ use buttplug::core::message::ActuatorType;
 
 use crate::{actuator::Actuator, util::trim_lower_str_list};
 
-use super::{
-    linear::{LinearRange, LinearSpeedScaling}, 
-    scalar::ScalarRange, ActuatorLimits
-};
+pub mod linear;
+pub mod scalar;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ActuatorSettings(pub Vec<ActuatorConfig>);
@@ -21,6 +21,14 @@ pub struct ActuatorConfig {
     pub body_parts: Vec<String>,
     #[serde(default = "ActuatorLimits::default")]
     pub limits: ActuatorLimits,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub enum ActuatorLimits {
+    #[default]
+    None,
+    Scalar(ScalarRange),
+    Linear(LinearRange),
 }
 
 impl ActuatorSettings {
@@ -150,7 +158,6 @@ impl ActuatorSettings {
         self.get_or_create(actuator_config_id).enabled
     }
 }
-
 
 impl ActuatorConfig {
     pub fn from_identifier(actuator_id: &str) -> ActuatorConfig {

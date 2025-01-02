@@ -4,11 +4,12 @@ use std::{
     time::Instant,
 };
 
+use actuators::linear::{LinearRange, LinearSpeedScaling};
 use actuators::ActuatorSettings;
 use anyhow::anyhow;
 use anyhow::Error;
 
-use connection::ConnectionType;
+use config::util::read::read_config_dir;
 use rand::Rng;
 
 use futures::Future;
@@ -32,9 +33,7 @@ use crate::*;
 
 use actions::*;
 use config::client::*;
-use config::linear::*;
 use pattern::read_pattern;
-use read::read_config_dir;
 
 #[cfg(feature = "testing")]
 use bp_fakes::FakeDeviceConnector;

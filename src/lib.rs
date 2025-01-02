@@ -172,7 +172,8 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use actuators::{ActuatorConfig, ActuatorSettings};
+    use actuators::linear::{LinearRange, LinearSpeedScaling};
+    use actuators::{ActuatorConfig, ActuatorLimits, ActuatorSettings};
     use funscript::{FSPoint, FScript};
     use futures::future::join_all;
 
@@ -186,7 +187,6 @@ mod tests {
     use crate::actuator::{ActuatorConfigLoader, Actuators};
     use crate::player::PatternPlayer;
     use crate::config::*;
-    use crate::config::linear::*;
     use crate::speed::Speed;
     
     use bp_fakes::*;
@@ -319,7 +319,7 @@ mod tests {
     async fn test_stroke_linear_1() {
         let (client, _) = test_stroke(
             Speed::new(100),
-            LinearRange{ min_pos: 0.0, max_pos: 1.0, min_ms: 50, max_ms: 400, invert: false, scaling: crate::config::linear::LinearSpeedScaling::Linear },
+            LinearRange{ min_pos: 0.0, max_pos: 1.0, min_ms: 50, max_ms: 400, invert: false, scaling: LinearSpeedScaling::Linear },
         )
         .await;
 
@@ -333,7 +333,7 @@ mod tests {
     async fn test_stroke_linear_2() {
         let (client, _) = test_stroke(
             Speed::new(0),
-            LinearRange{ min_pos: 1.0, max_pos: 0.0, min_ms: 10, max_ms: 100, invert: false, scaling: crate::config::linear::LinearSpeedScaling::Linear }
+            LinearRange{ min_pos: 1.0, max_pos: 0.0, min_ms: 10, max_ms: 100, invert: false, scaling: LinearSpeedScaling::Linear }
         )
         .await;
 
@@ -347,7 +347,7 @@ mod tests {
     async fn test_stroke_linear_3() {
         let (client, _) = test_stroke(
             Speed::new(75),
-            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 100, max_ms: 200, invert: false, scaling: crate::config::linear::LinearSpeedScaling::Linear }
+            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 100, max_ms: 200, invert: false, scaling: LinearSpeedScaling::Linear }
         )
         .await;
 
@@ -361,7 +361,7 @@ mod tests {
     async fn test_stroke_linear_invert() {
         let (client, _) = test_stroke(
             Speed::new(100),
-            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 50, max_ms: 50, invert: true, scaling: crate::config::linear::LinearSpeedScaling::Linear }
+            LinearRange{ min_pos: 0.2, max_pos: 0.7, min_ms: 50, max_ms: 50, invert: true, scaling: LinearSpeedScaling::Linear }
         )
         .await;
 
@@ -390,7 +390,7 @@ mod tests {
                         min_ms: 10, 
                         max_ms: 100, 
                         invert: true, 
-                        scaling: crate::config::linear::LinearSpeedScaling::Linear
+                        scaling: LinearSpeedScaling::Linear
                     })
                 .await;
         });

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use buttplug::{client::ButtplugClientDevice, core::message::ActuatorType};
 use tracing::{debug, error};
 
-use crate::{actions::Selector, actuator::{Actuator, ActuatorConfigLoader, Actuators}, actuators::ActuatorConfig};
+use crate::{actions::Selector, actuator::{Actuator, ActuatorConfigLoader, Actuators}};
 
 use super::actuators::ActuatorSettings;
 
@@ -46,7 +46,9 @@ impl Filter {
     }
 
     pub fn enabled(mut self) -> Self {
-        self.actuators.retain(|x| x.get_settings(&mut self.settings).enabled);
+        self.actuators.retain(|x| {
+            self.settings.get_or_create(x.identifier())
+        }.enabled);
         self
     }
 
@@ -69,12 +71,5 @@ impl Filter {
     pub fn result(self) -> (ActuatorSettings, Vec<Arc<Actuator>>) {
         debug!(?self.actuators, "result");
         (self.settings, self.actuators)
-    }
-}
-
-impl Actuator {
-    pub fn get_settings(&self, settings: &mut ActuatorSettings) -> ActuatorConfig {
-        // TODO: Remove
-        settings.get_or_create(self.identifier())
     }
 }

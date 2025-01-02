@@ -20,11 +20,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace};
 
 use crate::{
-    actuator::Actuator,
-    cancellable_wait,
-    config::linear::{LinearRange, LinearSpeedScaling},
-    speed::Speed,
-    ActuatorLimits,
+    actuator::Actuator, actuators::{linear::{LinearRange, LinearSpeedScaling}, ActuatorLimits}, cancellable_wait, speed::Speed
 };
 
 pub mod access;
