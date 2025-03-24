@@ -235,9 +235,9 @@ impl BpClient {
         body_parts: Vec<String>,
         speed: Speed,
         duration: Duration,
+        mut handle: i32,
     ) -> DispatchResult {
         info!(?actions, "dispatch_refs");
-        let mut handle = -1;
         let mut started_actions = vec![];
         for action in actions {
             let strength = action.0.multiply(&speed);
@@ -484,7 +484,7 @@ mod tests {
                 vec![Control::Scalar(Selector::Any, actuators.to_vec())],
             ),
         );
-        tk.dispatch_refs(vec![x], body_parts, Speed::max(), duration).handle
+        tk.dispatch_refs(vec![x], body_parts, Speed::max(), duration, -1).handle
     }
 
     #[test]

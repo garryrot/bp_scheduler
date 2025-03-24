@@ -8,7 +8,7 @@ use crate::speed::Speed;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Actions(pub Vec<Action>);
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
 pub struct ActionRef {
     pub action: String,
     pub strength: Stren,
@@ -23,7 +23,7 @@ impl ActionRef {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Variable {
     PlayerActorValue(String), // TODO: This entry needs to disapper from bp_scheduler and move somewhere else
     BoneTrackingRate,
@@ -31,7 +31,7 @@ pub enum Variable {
     BoneTrackingPos,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Stren {
     Constant(i32),
     Variable(Variable),
