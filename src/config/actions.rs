@@ -106,7 +106,7 @@ impl Control {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Selector {
     Any,
     NotTag(String),
