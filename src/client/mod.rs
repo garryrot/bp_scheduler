@@ -107,7 +107,7 @@ impl BpClient {
     }
 }
 
-pub struct DispatchResult {
+pub struct ExecutionResult {
     pub handle: i32,
     pub actions: Vec<(String, Vec<Arc<Actuator>>)>
 }
@@ -229,15 +229,15 @@ impl BpClient {
         true
     }
 
-    pub fn dispatch_refs(
+    pub fn execute_actions(
         &mut self,
         actions: Vec<(Strength, Action)>,
         body_parts: Vec<String>,
         speed: Speed,
         duration: Duration,
         mut handle: i32,
-    ) -> DispatchResult {
-        info!(?actions, "dispatch_refs");
+    ) -> ExecutionResult {
+        info!(?actions, "execute_actions");
         let mut started_actions = vec![];
         for action in actions {
             let strength = action.0.multiply(&speed);
@@ -264,7 +264,7 @@ impl BpClient {
             }
         }
 
-        DispatchResult {
+        ExecutionResult {
             handle,
             actions: started_actions
         }
@@ -484,7 +484,7 @@ mod tests {
                 vec![Control::Scalar(Selector::Any, actuators.to_vec())],
             ),
         );
-        tk.dispatch_refs(vec![x], body_parts, Speed::max(), duration, -1).handle
+        tk.execute_actions(vec![x], body_parts, Speed::max(), duration, -1).handle
     }
 
     #[test]
