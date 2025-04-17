@@ -237,7 +237,6 @@ impl BpClient {
         duration: Duration,
         mut handle: i32,
     ) -> ExecutionResult {
-        info!(?actions, "execute_actions");
         let mut started_actions = vec![];
         for action in actions {
             let strength = action.0.multiply(&speed);
@@ -246,7 +245,7 @@ impl BpClient {
                 let used_actuators;
 
                 let action_name = action.1.name.clone();
-                (handle, used_actuators) = self.dispatch(
+                (handle, used_actuators) = self.execute_action(
                     match control {
                         Control::Scalar(selector, actuators) => {
                             Control::Scalar(selector.and(ext_selector), actuators)
@@ -270,18 +269,17 @@ impl BpClient {
         }
     }
 
-    pub fn dispatch(
+    pub fn execute_action(
         &mut self,
         control: Control,
         strength: Strength,
         duration: Duration,
         handle: i32,
-        action_name: String, // just for diagnosis
+        name: String, // just for logging
     ) -> (i32, Vec<Arc<Actuator>>) {
-        info!(handle, "dispatch");
         self.scheduler.clean_finished_tasks();
         let selector = control.get_selector();
-        info!(?selector);
+        info!(name, handle, ?selector, "execute action");
         let (updated_settings, actuators) =
             Filter::new(self.device_settings.clone(), &self.buttplug.devices())
                 .load_config(&mut self.device_settings)
@@ -302,7 +300,7 @@ impl BpClient {
             let now = Instant::now();
             let handle = player.handle;
             let actuators = &player.actuators;
-            let sp = span!(Level::INFO, "dispatching", handle, action_name);
+            let sp = span!(Level::INFO, "action", handle, name);
             info!(?actuators, ?selector);
             async move {
                 let result = match control {

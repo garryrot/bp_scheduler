@@ -182,7 +182,7 @@ mod tests {
         let actuators = test_client.created_devices.flatten_actuators().clone();
         let (sender, receiver) = unbounded_channel::<TrackingSignal>();
         let tracking = DynamicTracking {
-            settings: DynamicSettings {
+            settings: StrokerSettings {
                 move_at_start: false,
                 min_resolution_ms: 50,
                 min_ms_for_full_stroke: 200, // lmits speed

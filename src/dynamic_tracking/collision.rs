@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Collision {
-    pub outer_distance: f32,
+    pub radius: f32,
     pub depth: f32,
-    pub min_stroke: f32,
+    pub min_penetration: f32,
     pub error_tolerance: f32
 }
 
@@ -13,14 +13,14 @@ impl Collision {
         let min = f32::min(a1, a2);
         let max = f32::max(a1, a2);
 
-        if min >= self.outer_distance {
+        if min >= self.radius {
             // out of upper limits
             (1.0, 1.0)
-        } else if max <= (self.outer_distance - self.depth) {
+        } else if max <= (self.radius - self.depth) {
             (0.0, 0.0)
         } else {
             // any collision beyond max depth is ignored
-            let ignored_depth = self.outer_distance - self.depth;
+            let ignored_depth = self.radius - self.depth;
 
             // normalize positions to zero
             let zmin = f32::max(min - ignored_depth, 0.0);
@@ -31,11 +31,11 @@ impl Collision {
             let mut upper = zmax / self.depth;
 
             // assure length is at least min_stroke
-            if upper - lower < self.min_stroke {
-                if lower - self.min_stroke < 0.0 {
-                    upper = lower + self.min_stroke;
+            if upper - lower < self.min_penetration {
+                if lower - self.min_penetration < 0.0 {
+                    upper = lower + self.min_penetration;
                 } else {
-                    lower = upper - self.min_stroke;
+                    lower = upper - self.min_penetration;
                 }
             }
             (lower.into(), upper.into())
@@ -51,9 +51,9 @@ mod tests {
     #[tokio::test]
     pub async fn get_stroke_range_intervall_correct() {
         let c = Collision {
-            outer_distance: 10.0,
+            radius: 10.0,
             depth: 6.0,
-            min_stroke: 0.25, 
+            min_penetration: 0.25, 
             error_tolerance: 0.35
         };
 
@@ -95,9 +95,9 @@ mod tests {
     #[tokio::test]
     pub async fn get_stroke_range_min_stroke() {
         let c = Collision {
-            outer_distance: 10.0,
+            radius: 10.0,
             depth: 10.0,
-            min_stroke: 0.25,
+            min_penetration: 0.25,
             error_tolerance: 0.0
         };
         assert_range_equal(c.get_stroke_range(9.0, 10.0), (0.75, 1.0)); // "upper end"

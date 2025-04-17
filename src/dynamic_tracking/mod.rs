@@ -26,7 +26,7 @@ pub enum TrackingSignal {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DynamicSettings {
+pub struct StrokerSettings {
     pub move_at_start: bool,
     pub starting_position: f64,
     pub min_resolution_ms: u32,
@@ -34,12 +34,12 @@ pub struct DynamicSettings {
     pub stroke_max_ms: u32,
     pub sampling_rate_ms: u64,
     pub initial_timeout_ms: u64,
-    pub stroke_default_ms: u32,
+    pub stroke_default_ms: u32
 }
 
-impl Default for DynamicSettings {
+impl Default for StrokerSettings {
     fn default() -> Self {
-        DynamicSettings {
+        StrokerSettings {
             move_at_start: true,
             starting_position: 1.0,
             min_resolution_ms: 80,
@@ -54,7 +54,7 @@ impl Default for DynamicSettings {
 
 // TODO Rename to BoneTrackingAction
 pub struct DynamicTracking {
-    pub settings: DynamicSettings,
+    pub settings: StrokerSettings,
     pub signals: UnboundedReceiver<TrackingSignal>,
     pub actuators: Vec<Arc<Actuator>>,
     pub status: DynamicTrackingHandle
