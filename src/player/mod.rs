@@ -66,7 +66,6 @@ impl PatternPlayer {
             result = self.do_stroke(false, current_speed, &settings).await;
         }
         waiter.abort();
-        info!("done");
         result
     }
 
@@ -102,7 +101,6 @@ impl PatternPlayer {
             }
         }
         waiter.abort();
-        info!("done");
         last_result
     }
 
@@ -159,7 +157,6 @@ impl PatternPlayer {
         }
         waiter.abort();
         let result = self.do_stop(true).await;
-        info!("done");
         result
     }
 
@@ -182,7 +179,6 @@ impl PatternPlayer {
         }
         waiter.abort();
         let result = self.do_stop(false).await;
-        info!("done");
         result
     }
 
@@ -215,7 +211,6 @@ impl PatternPlayer {
         }
         waiter.abort();
         let result = self.do_stop(false).await;
-        info!("done");
         result
     }
 

@@ -402,7 +402,6 @@ impl BpClient {
                         Strength::Variable(_) => panic!("dynamic not supported"),
                     },
                 };
-                info!(handle, "done");
                 match result {
                     Ok(()) => {
                         info!(
